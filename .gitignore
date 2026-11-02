@@ -1,0 +1,21 @@
+# Virtual Environments
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+
+# Database
+*.db
+*.sqlite3
+
+# Outputs & temp files
+projects/*/output/*
+!projects/*/output/.gitkeep
+.streamlit/credentials.toml
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
