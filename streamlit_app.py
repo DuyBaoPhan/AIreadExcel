@@ -47,3 +47,4 @@ chatbot_path = PROJECT_DIR / "app" / "chatbot.py"
 with open(chatbot_path, encoding="utf-8") as f:
     code = compile(f.read(), str(chatbot_path), "exec")
     exec(code, globals())
+
