@@ -15,6 +15,7 @@ import streamlit as st
 from app.services.download_service import EXCEL_MIME, fetch_output_file
 from app.report_wizard import render_report_wizard
 from app.advanced_report_wizard import render_advanced_report_wizard
+from app.ui_theme import inject_theme, render_hero, render_empty_chat, render_section_intro, render_sidebar_brand
 
 # ──────────────────────────────────────────────────────────────
 #  Config
@@ -23,7 +24,7 @@ API_BASE = "http://localhost:8000"
 DEFAULT_PROJECT = "demo_project"
 
 st.set_page_config(
-    page_title="Excel AI Chatbot",
+    page_title="Excel Studio | Data workspace",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -86,7 +87,7 @@ def render_message(msg: dict, message_index: int = 0):
     content = msg["content"]
     meta = msg.get("metadata", {})
 
-    with st.chat_message(role):
+    with st.chat_message(role, avatar="🧑‍💻" if role == "user" else "⚡"):
         st.markdown(content)
 
         if meta.get("intent_display"):
@@ -326,105 +327,119 @@ def handle_pending_comparison(user_text: str) -> bool:
 #  SIDEBAR
 # ──────────────────────────────────────────────────────────────
 
+inject_theme()
+
+
+def backend_online() -> bool:
+    """Keep backend state explicit; offline report tools remain usable."""
+    try:
+        return requests.get(f"{API_BASE}/health", timeout=2).status_code == 200
+    except requests.RequestException:
+        return False
+
+
+online = backend_online()
 with st.sidebar:
-    st.title("⚙️ Cài đặt")
-
-    project = st.selectbox(
-        "Project",
-        options=["demo_project"],
-        index=0,
+    render_sidebar_brand()
+    section = st.radio(
+        "Không gian làm việc",
+        ["Chatbot", "Tạo báo cáo", "Báo cáo nâng cao"],
+        key="workspace_section",
     )
+    st.divider()
+    project = st.selectbox("Dự án chatbot", options=["demo_project"], index=0)
     st.session_state.project = project
-
-    st.divider()
-    st.subheader("📁 File trong Input")
-    if st.button("🔄 Làm mới danh sách"):
+    st.caption("File upload trong công cụ báo cáo được xử lý riêng, không tự thêm vào nguồn chatbot.")
+    if st.button("↻ Làm mới kết nối & file", key="refresh_workspace", use_container_width=True):
+        _load_download_data.clear()
         st.rerun()
 
-    input_files = get_file_list("input")
-    if input_files:
-        for f in input_files:
-            st.text(f"📄 {f.get('name')} ({f.get('size')})")
-    else:
-        st.info("Không có file nào trong input/")
-
+    # File browsing is loaded only when explicitly requested, not on every chat rerun.
+    if st.checkbox("Mở thư viện file dự án", key="show_project_files"):
+        if not online:
+            st.info("Kết nối backend để xem file dự án.")
+        else:
+            input_files = get_file_list("input")
+            output_files = get_file_list("output")
+            with st.expander(f"Nguồn dữ liệu · {len(input_files)}", expanded=True):
+                if not input_files:
+                    st.caption("Chưa có file nguồn.")
+                for f in input_files:
+                    st.write(f"📄 {f.get('name', '')}")
+                    st.caption(f.get("size", ""))
+            with st.expander(f"Kết quả · {len(output_files)}"):
+                selected_name = st.selectbox(
+                    "Chọn kết quả để tải", [f.get("name", "") for f in output_files],
+                    key="selected_output_file",
+                ) if output_files else None
+                if selected_name:
+                    _render_download_button(selected_name, project=project, key="sidebar_selected_download")
+                else:
+                    st.caption("Chưa có file kết quả.")
     st.divider()
-    st.subheader("📤 File Output")
-    output_files = get_file_list("output")
-    if output_files:
-        for f in output_files:
-            fname = f.get("name", "")
-            project_name = st.session_state.project
-            _render_download_button(
-                fname, project=project_name, key=f"sidebar_download_{project_name}_{fname}",
-            )
-            st.caption(f.get("size", ""))
-    else:
-        st.info("Chưa có file output.")
-
-    st.divider()
-    st.caption(f"Session: `{st.session_state.session_id[:8]}...`")
-    if st.button("🗑️ Xoá lịch sử chat"):
-        st.session_state.messages = []
-        st.session_state.pending_comparison = None
-        st.rerun()
-
+    st.caption("RULE-BASED ENGINE · Không sử dụng LLM")
+    st.caption(f"Phiên làm việc: {st.session_state.session_id[:8]}")
+    st.caption("Dữ liệu phiên không thay thế kho lưu trữ. Hãy tải kết quả trước khi đóng ứng dụng.")
 
 # ──────────────────────────────────────────────────────────────
 #  MAIN AREA
 # ──────────────────────────────────────────────────────────────
-
-st.title("📊 Excel AI Chatbot")
-st.markdown(
-    "_Hệ thống xử lý Excel bằng Rule-based Engine — **không sử dụng LLM**_"
-)
-
-# Hiển thị trạng thái API
-try:
-    health = requests.get(f"{API_BASE}/health", timeout=3)
-    if health.status_code == 200:
-        st.success("✅ API Server đang hoạt động")
-    else:
-        st.error("❌ API Server gặp sự cố")
-except Exception:
-    st.error("❌ Không kết nối được API Server. Chạy: `uvicorn app.main:app --reload`")
-
-st.divider()
-
-render_report_wizard()
-render_advanced_report_wizard()
-
-st.divider()
-
-# Gợi ý nhanh
-st.markdown("**💡 Thử ngay:**")
-quick_cols = st.columns(3)
-quick_commands = [
-    "Liệt kê các file Excel",
-    "Gộp tất cả file Excel",
-    "Lọc nhân viên có lương trên 10 triệu",
-    "So sánh Root và Update",
-    "Tạo báo cáo tổng hợp",
-    "Hướng dẫn",
-]
-for i, cmd in enumerate(quick_commands):
-    col = quick_cols[i % 3]
-    if col.button(cmd, key=f"quick_{i}"):
-        process_command(cmd)
-        st.rerun()
-
-st.divider()
-
-# Hiển thị lịch sử chat
-for message_index, msg in enumerate(st.session_state.messages):
-    render_message(msg, message_index)
-
-# Chat input
-if prompt := st.chat_input("Nhập câu lệnh bằng tiếng Việt..."):
-    # Kiểm tra xem có đang chờ primary key không
+render_hero(online, section)
+if section == "Tạo báo cáo":
+    render_section_intro("Từ dữ liệu đến báo cáo.", "Chọn một mẫu có sẵn, xem trước và xuất Excel chỉ trong vài bước.")
+    render_report_wizard()
+elif section == "Báo cáo nâng cao":
+    render_section_intro("Thiết kế phân tích của riêng bạn.", "Lọc, nối nguồn, pivot và so sánh kỳ bằng cấu hình rõ ràng — không cần viết code.")
+    render_advanced_report_wizard()
+else:
+    # Gợi ý nhanh
+    if not online:
+        st.warning("Chatbot chưa kết nối backend. Bạn vẫn có thể dùng Tạo báo cáo và Báo cáo nâng cao ở thanh bên.")
     if st.session_state.pending_comparison:
-        handle_pending_comparison(prompt)
-    else:
-        process_command(prompt)
-    st.rerun()
-
+        st.info("Đang chờ khóa đối chiếu. Nhập tên cột khóa bên dưới hoặc hủy tác vụ để bắt đầu yêu cầu khác.")
+        if st.button("Hủy đối chiếu đang chờ", key="cancel_comparison"):
+            st.session_state.pending_comparison = None
+            st.rerun()
+    if not st.session_state.messages:
+        render_empty_chat()
+    with st.expander("Thao tác nhanh · chọn một yêu cầu mẫu", expanded=not st.session_state.messages):
+        quick_commands = [
+            ("📂 Xem nguồn dữ liệu", "Liệt kê các file Excel"),
+            ("🔗 Gộp file Excel", "Gộp tất cả file Excel"),
+            ("🔎 Lọc theo mức lương", "Lọc nhân viên có lương trên 10 triệu"),
+            ("⚖️ Đối chiếu thay đổi", "So sánh Root và Update"),
+            ("📊 Báo cáo tổng hợp", "Tạo báo cáo tổng hợp"),
+            ("💡 Hướng dẫn sử dụng", "Hướng dẫn"),
+        ]
+        quick_cols = st.columns(2)
+        for i, (label, command) in enumerate(quick_commands):
+            if quick_cols[i % 2].button(
+                label, key=f"quick_{i}", use_container_width=True,
+                help=command, disabled=not online or bool(st.session_state.pending_comparison),
+            ):
+                process_command(command)
+                st.rerun()
+    if st.session_state.messages:
+        c1, c2 = st.columns([3, 1])
+        c1.caption(f"HỘI THOẠI · {len(st.session_state.messages)} tin nhắn")
+        with c2:
+            with st.expander("Quản lý hội thoại"):
+                history = "\n\n".join(f"{m['role'].upper()}: {m['content']}" for m in st.session_state.messages)
+                st.download_button("Lưu hội thoại", data=history, file_name="conversation.txt", mime="text/plain", key="save_chat")
+                confirm_clear = st.checkbox("Xác nhận xóa lịch sử phiên", key="confirm_clear_chat")
+                if st.button("Xóa hội thoại", disabled=not confirm_clear, key="clear_chat"):
+                    st.session_state.messages = []
+                    st.session_state.pending_comparison = None
+                    st.rerun()
+    # Hiển thị lịch sử chat
+    for message_index, msg in enumerate(st.session_state.messages):
+        render_message(msg, message_index)
+    # Chat input
+    placeholder = "Nhập tên cột khóa, ví dụ employee_id…" if st.session_state.pending_comparison else "Bạn muốn xử lý dữ liệu như thế nào? Ví dụ: lọc nhân viên có lương trên 10 triệu…"
+    if prompt := st.chat_input(placeholder, disabled=not online, key="workspace_chat_input"):
+        # Kiểm tra xem có đang chờ primary key không
+        if st.session_state.pending_comparison:
+            handle_pending_comparison(prompt)
+        else:
+            process_command(prompt)
+        st.rerun()

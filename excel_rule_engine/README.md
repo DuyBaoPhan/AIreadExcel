@@ -237,3 +237,11 @@ Tối đa mỗi file 20 MB, workbook giải nén 200 MB, 100.000 dòng, 200 cộ
 Cấu hình mẫu ở `examples/hr_report.json`, `examples/payroll_pivot.json`, `examples/period_comparison.json`; thay tên cột và khoảng ngày theo nguồn thực tế. Mẫu so sánh dùng ngày bắt đầu làm việc chỉ để minh họa kỹ thuật, không phải so sánh quỹ lương tháng thực tế.
 
 Giới hạn xuất Excel có định dạng: tổng Data + Summary tối đa 1.000.000 ô. Ô chữ/tiêu đề dài hơn giới hạn Excel 32.767 ký tự UTF-16 sẽ bị từ chối, không cắt ngầm. Sheet Configuration lưu JSON thành các đoạn; ghép các ô theo thứ tự, không thêm dấu phân cách, để khôi phục JSON. Nút tải cấu hình JSON là cách dùng lại cấu hình trực tiếp.
+
+## Giao diện Excel Studio
+
+Thanh bên chia ba không gian độc lập: **Chatbot**, **Tạo báo cáo** và **Báo cáo nâng cao**. Chỉ công cụ đang chọn được dựng, giảm tải và tránh nhầm nguồn. Chatbot sử dụng file dự án; công cụ báo cáo sử dụng file upload riêng trong phiên. Khi backend mất kết nối, chatbot tạm khóa nhưng hai công cụ báo cáo vẫn dùng được.
+
+Thư viện file dự án chỉ tải khi bật **Mở thư viện file dự án**; chọn một kết quả để tải thay vì nạp tất cả file. Hội thoại có thể lưu thành văn bản, xóa cần xác nhận. Chuyển công cụ không xóa lịch sử chat. Tác vụ đối chiếu đang chờ có nút hủy riêng.
+
+Theme dark/cyan tự chứa, không gọi font/CDN ngoài; có trạng thái focus bàn phím và hỗ trợ giảm chuyển động. Theme Streamlit ở `.streamlit/config.toml` tại thư mục gốc và thư mục engine để chạy từ cả hai vị trí. Khởi động lại Streamlit sau khi đổi cấu hình theme. Không có thay đổi thuật toán tính toán hoặc quyền truy cập dữ liệu trong lần thiết kế giao diện này.
