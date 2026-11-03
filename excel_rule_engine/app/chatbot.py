@@ -159,13 +159,18 @@ def process_command(user_text: str):
 
     from app.core.analytical_request import is_analytical_request
     if is_analytical_request(user_text):
-        with st.spinner("Đang phân tích nguồn và yêu cầu..."):
-            plan = call_api("/api/report/preview", {
+        automatic = st.session_state.get("auto_reports", True)
+        endpoint = "/api/report/auto" if automatic else "/api/report/preview"
+        with st.spinner("Đang chọn nguồn và xử lý yêu cầu..."):
+            response = call_api(endpoint, {
                 "text": user_text, "project": st.session_state.project,
             })
-        if not plan or plan.get("error"):
-            add_message("assistant", "Không thể mở bộ phân tích báo cáo. Backend có thể chưa cập nhật; hãy khởi động lại backend/ứng dụng. Không chạy thay bằng gộp file.\n\n" + str((plan or {}).get("error", "Không có phản hồi.")))
+        if not response or response.get("error"):
+            add_message("assistant", "Không thể xử lý báo cáo. Nếu gặp HTTP 404 trên Streamlit Cloud: cập nhật mã lên đúng nhánh và Reboot app. Không chạy thay bằng gộp file.\n\n" + str((response or {}).get("error", "Không có phản hồi.")))
+        elif response.get("result"):
+            _handle_success_result("EXPORT", response["result"], {})
         else:
+            plan = response.get("report_plan", response.get("requires_input", response))
             _handle_requires_input({"type": "report_plan", "text": user_text,
                                     "project": st.session_state.project, **plan}, {}, {})
         return
@@ -308,6 +313,15 @@ def _handle_success_result(intent: str, result: dict, meta: dict):
             f"Nguồn: {result['source_file']} · {result['total_rows']} dòng phù hợp. "
             "Đơn vị tiền tệ theo dữ liệu nguồn."
         )
+    elif intent == "EXPORT" and result.get("report_type") == "planned":
+        msg = (f"**Đã xử lý báo cáo.**\n\nNguồn: {result.get('source_file', '')} · "
+               f"{result.get('total_rows', 0):,} dòng phù hợp.")
+        if result.get("selection_reason"):
+            msg += "\n\n" + result["selection_reason"]
+        if result.get("explanation"):
+            msg += "\n\n" + "\n".join("• " + str(line) for line in result["explanation"])
+        meta.update(summary=result.get("summary", []), detail_preview=result.get("detail_preview", []),
+                    total_rows=result.get("total_rows"), selection_reason=result.get("selection_reason", ""))
     elif intent == "EXPORT":
         msg = (
             f"✅ **Tạo báo cáo thành công!**\n"
@@ -388,6 +402,8 @@ with st.sidebar:
     project = st.selectbox("Dự án chatbot", options=["demo_project"], index=0)
     st.session_state.project = project
     st.caption("File upload trong công cụ báo cáo được xử lý riêng, không tự thêm vào nguồn chatbot.")
+    st.checkbox("Tự động tạo báo cáo khi yêu cầu rõ ràng", value=True, key="auto_reports")
+    st.caption("Chỉ hỏi lại khi nguồn hoặc phép tính còn mơ hồ. Tắt để xem và xác nhận kế hoạch trước khi xuất.")
     if st.button("↻ Làm mới kết nối & file", key="refresh_workspace", use_container_width=True):
         _load_download_data.clear()
         st.rerun()

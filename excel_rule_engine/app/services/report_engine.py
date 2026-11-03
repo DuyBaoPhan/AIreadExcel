@@ -93,9 +93,11 @@ def _validate_config(config):
             _require(isinstance(p.get('values'), str), 'pivot values required')
     if 'top_n' in config:
         t = config['top_n']
-        _keys(t, {'column', 'n', 'ascending'}, 'top_n')
+        _keys(t, {'column', 'n', 'ascending', 'offset'}, 'top_n')
         _require(isinstance(t.get('column'), str) and type(t.get('n')) is int and 1 <= t['n'] <= MAX_ROWS, 'Invalid top_n')
         _require(type(t.get('ascending', False)) is bool, 'top_n ascending must be boolean')
+        _require(type(t.get('offset', 0)) is int and 0 <= t.get('offset', 0) < MAX_ROWS, 'Invalid top_n offset')
+        _require(t.get('offset', 0) + t['n'] <= MAX_ROWS, 'top_n window exceeds row limit')
     if 'comparison' in config:
         c = config['comparison']
         _keys(c, {'date_column', 'current_start', 'current_end', 'previous_start', 'previous_end'}, 'comparison')
@@ -301,6 +303,8 @@ def run_report(df: pd.DataFrame, config: dict) -> dict:
 
     top_n applies to summary when one is configured, otherwise detail. Source is
     never mutated. Missing sum values stay NaN. Null group keys are preserved.
+    Optional top_n offset skips sorted rows, not dense ranks; ties retain input
+    (or first-seen group) order. Summary ranking preserves all detail evidence.
     All invalid configuration/data raise ValueError rather than silently coerce.
     """
     _frame(df)
@@ -353,7 +357,8 @@ def run_report(df: pd.DataFrame, config: dict) -> dict:
         t = config['top_n']
         target = summary if has_summary else data
         _cols([t['column']], target.columns, 'top_n')
-        target = target.sort_values(t['column'], ascending=t.get('ascending', False), kind='stable').head(t['n']).copy()
+        offset = t.get('offset', 0)
+        target = target.sort_values(t['column'], ascending=t.get('ascending', False), kind='stable').iloc[offset:offset + t['n']].copy()
         if has_summary: summary = target
         else: data = target
     _frame(data)

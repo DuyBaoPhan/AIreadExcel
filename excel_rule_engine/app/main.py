@@ -406,6 +406,16 @@ async def preview_conversation_report(req: ReportPlanRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/report/auto")
+async def automatic_conversation_report(req: ReportPlanRequest):
+    """Execute a ready plan on one snapshot, otherwise ask for missing input."""
+    from app.services.conversation_reporting import automatic_request
+    try:
+        return automatic_request(get_input_dir(req.project), req.project, req.text, req.source_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/report/confirm")
 async def confirm_conversation_report(req: ConfirmReportRequest):
     """Rebuild and validate the approved plan against current source bytes."""

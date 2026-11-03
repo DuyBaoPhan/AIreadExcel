@@ -285,3 +285,17 @@ Bộ kiểm thử cố định có 596 trường hợp (572 câu khác nhau), g�
 - Xuất nhật ký từng câu: `excel_rule_engine\venv\Scripts\python.exe excel_rule_engine/tests/test_nlp_benchmark.py --audit docs/nlp_benchmark_current.json`. Chế độ audit luôn lưu cả lỗi và trả mã 0; pytest mới là cổng kiểm tra bắt buộc.
 
 Đây là phạm vi đã kiểm thử, không phải cam kết hiểu mọi câu tiếng Việt. Trường hợp phạm vi tính toán mơ hồ sẽ hỏi lại, không tự bỏ điều kiện hoặc chuyển sang gộp file. Khởi động lại cả backend sau khi cập nhật mã nguồn.
+
+## Tự động tạo báo cáo khi yêu cầu rõ ràng
+
+Chatbot mặc định bật **Tự động tạo báo cáo**: chọn nguồn dựa trên cột nghiệp vụ, giá trị và thời gian phù hợp rồi tạo kết quả ngay, không yêu cầu xác nhận lần hai. Có thể tắt tùy chọn này ở thanh bên để xem và xác nhận kế hoạch theo cách thủ công.
+
+- Không chọn nguồn chỉ vì tên tệp, thứ tự, số dòng hoặc vì một nguồn dễ phân tích hơn nguồn khác.
+- Nếu nhiều nguồn cùng phù hợp, chỉ hiển thị những nguồn liên quan để người dùng chọn; ở chế độ tự động, chọn xong sẽ chạy ngay. Không tự gộp các tệp nhân sự.
+- Kết quả ghi rõ nguồn, lý do chọn và số dòng phù hợp. Luồng tự động lập kế hoạch và chạy trên cùng một bản chụp dữ liệu, không ghi đè tệp đầu vào.
+- “Đứng top 2” trả hai đối tượng dẫn đầu; “đứng thứ 2” trả một đối tượng tại vị trí thứ hai. Các giá trị bằng nhau được giữ thứ tự ổn định, không dùng hạng đồng hạng dày đặc.
+- Điều kiện chưa hiểu hoặc không có bằng chứng dữ liệu sẽ không được thay bằng báo cáo tổng hợp/gộp file.
+
+**Streamlit Cloud:** đưa toàn bộ mã mới lên đúng repository/branch của app, sau đó chọn **Reboot app** trong phần quản lý ứng dụng. Backend cần có cả các tuyến lập kế hoạch, xác nhận và `POST /api/report/auto`; chỉ tải lại trang trình duyệt không bảo đảm backend cũ đã được thay. Không chuyển sang gộp file khi gặp HTTP 404.
+
+Kết quả kiểm thử và giới hạn của đợt nâng cấp: [automatic_reporting_results.md](../docs/automatic_reporting_results.md).

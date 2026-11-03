@@ -337,10 +337,15 @@ def _plan_one(text, name, df):
     lowest = ('thap nhat', 'nho nhat', 'it nhat', 'lowest', 'smallest', 'least')
     qualifiers = [m for m in matches(_pattern(highest + lowest))
                   if not any(used[m.start():m.end()])]
-    tops = matches(r'\btop\s+(\d+)\b')
-    ranking = bool(tops or qualifiers)
+    # Consume position words only as part of a complete ranking phrase. In
+    # particular, bare 'dung'/'thu' must not hide an unknown request clause.
+    tops = matches(r'\b(?:(?:dung|xep(?: hang)?|nam trong|thuoc)\s+)?top\s+(\d+)\b')
+    ordinals = matches(r'\b(?:(?:dung|xep(?: hang)?)\s+thu|(?:cao|lon|nhieu|thap|nho|it)\s+thu)\s+(\d+)\b(?:\s+ve\b)?')
+    ranking = bool(tops or qualifiers or ordinals)
     directions = {normalize(m.group()) in lowest for m in qualifiers}
-    if len(directions) > 1 or len(tops) > 1:
+    directions.update(bool(re.match(r'(?:thap|nho|it)\b', m.group())) for m in ordinals
+                      if re.match(r'(?:cao|lon|nhieu|thap|nho|it)\b', m.group()))
+    if len(directions) > 1 or len(tops) > 1 or len(ordinals) > 1 or (tops and ordinals):
         return _result('clarify', questions=['Bạn muốn xếp hạng cao nhất hay thấp nhất, và lấy bao nhiêu kết quả?'])
 
     # A named dimension must mean a group or a literal filter, not vanish.
@@ -396,19 +401,22 @@ def _plan_one(text, name, df):
         questions.append('Bạn muốn xếp hạng chung mọi kỳ hay xếp hạng riêng trong từng kỳ?')
 
     if ranking:
+        position = int(ordinals[0].group(1)) if ordinals else None
         n = int(tops[0].group(1)) if tops else 1
-        if n < 1 or n > 10000:
+        if n < 1 or n > 10000 or (position is not None and not 1 <= position <= 10000):
             errors.append('Top N phải trong 1–10000.')
         elif len(config['metrics']) != 1 or not config['group_by']:
             # A bare metric superlative has no safe entity to rank.
-            if tops or employees or config['group_by']:
+            if tops or ordinals or employees or config['group_by']:
                 questions.append('Top N cần một chỉ tiêu và một nhóm xếp hạng rõ ràng.')
             else:
                 errors.append('Cần chỉ rõ nhóm để xếp hạng chỉ tiêu.')
         else:
             config['top_n'] = {'column': config['metrics'][0]['alias'], 'n': n,
                                'ascending': next(iter(directions), False)}
-        for m in tops + qualifiers:
+            if position is not None:
+                config['top_n']['offset'] = position - 1
+        for m in tops + qualifiers + ordinals:
             mark(*m.span())
         # "which" is meaningful only when attached to a ranking entity.
         if config['group_by'] or employees:
@@ -462,13 +470,140 @@ def _plan_one(text, name, df):
     if questions:
         return _result('clarify', questions=list(dict.fromkeys(questions)))
     config['group_by'] = list(dict.fromkeys(config['group_by']))
+    ranking_explanation = []
+    if ranking:
+        ranking_explanation.append('Xếp hạng theo vị trí dòng sau khi sắp xếp; đồng hạng giữ thứ tự xuất hiện trong nguồn, không dùng hạng dày (dense rank).')
     if employee_detail:
         return _result('ready', source=name, config=config,
                        explanation=[f'Nguồn: {name}', 'Danh sách nhân viên chi tiết (không tổng hợp).',
                                     f"Điều kiện: {len(config['filters'])}."])
     return _result('ready', source=name, config=config,
                    explanation=[f'Nguồn: {name}', 'Chỉ tiêu: ' + ', '.join(f"{m['operation']}({m.get('column', '*')}) → {m['alias']}" for m in config['metrics']),
-                                f"Nhóm: {', '.join(config['group_by']) or 'toàn bộ'}; điều kiện: {len(config['filters'])}."])
+                                f"Nhóm: {', '.join(config['group_by']) or 'toàn bộ'}; điều kiện: {len(config['filters'])}."] + ranking_explanation)
+
+
+
+def _source_candidates(text, sources):
+    """Compare semantic evidence, never filenames, row counts, or plan success.
+
+    A strict superset of requested schema capabilities dominates a subset.
+    Literal/date evidence only narrows candidates when it positively matches;
+    absent or unknown values cannot manufacture a preferred source.
+    """
+    # Keep only maximal phrase spans: 'so luong' is quantity, not salary
+    # from its embedded 'luong'. Shared column aliases still remain ambiguous.
+    mentions = [(key, match.start(), match.end())
+                for key, aliases in SCHEMA_ALIASES.items()
+                for match in re.finditer(_pattern(aliases), text)]
+    required = {key for key, start, end in mentions if not any(
+        left <= start and end <= right and (left < start or end < right)
+        for _, left, right in mentions)}
+    employee = bool(re.search(_pattern(['nhan vien', 'nhan su', 'employee', 'employees']), text))
+    if employee:
+        required.discard('quantity')
+        required.add('employee')
+    if re.search(r'\b(?:19|20)\d{2}\b|\b(?:thang|quy)\s+(?:\d|iv|iii|ii|i\b)', text):
+        required.add('date')
+    capabilities = {}
+    schemas = {}
+    for name, frame in sources.items():
+        schema = {key: [col for col in frame.columns if isinstance(col, str) and
+                       normalize(col) in {normalize(a) for a in aliases}]
+                  for key, aliases in SCHEMA_ALIASES.items()} if (isinstance(frame, pd.DataFrame)
+                      and frame.columns.is_unique and all(isinstance(col, str) for col in frame.columns)) else {}
+        schemas[name] = schema
+        keys = {key for key, cols in schema.items() if cols}
+        if keys & {'employee_id', 'employee_name'}:
+            keys.add('employee')
+        capabilities[name] = required & keys
+    # A requested measure/entity is the domain anchor. Ancillary date/status
+    # columns alone must not make an unrelated HR table a sales candidate.
+    anchors = required & set(METRIC_NAMES)
+    if employee:
+        anchors.add('employee')
+    pool = [name for name in sources if capabilities[name] & anchors]
+    if not pool:
+        pool = list(sources)
+    names = [name for name in pool if not any(
+        capabilities[name] < capabilities[other] for other in pool)]
+    reason = 'Các nguồn có cột phù hợp với chỉ tiêu, đối tượng và điều kiện yêu cầu.'
+
+    # Data values provide independent evidence even when a grammar clause fails.
+    reserved = {normalize(a) for aliases in SCHEMA_ALIASES.values() for a in aliases}
+    reserved.update(('tong', 'trung binh', 'binh quan', 'dem', 'top', 'bao cao', 'sum',
+                     'mean', 'average', 'count', 'theo', 'nam', 'thang', 'quy', 'va',
+                     'hoac', 'cua', 'cho', 'cao nhat', 'thap nhat', 'lon nhat',
+                     'nho nhat', 'it nhat', 'toi da', 'toi thieu', 'nhan vien',
+                     'nhan su', 'don hang', 'hay', 'xem', 'tinh', 'la', 'co', 'trong',
+                     'vao', 'voi', 'du lieu', 'file', 'tep', 'loc', 'liet ke', 'danh sach'))
+    literal_evidence = {}
+    for name in names:
+        found = set()
+        frame = sources[name]
+        for key in DIMENSIONS:
+            for col in schemas[name].get(key, []):
+                for value in frame[col].dropna().unique():
+                    if isinstance(value, str):
+                        value = normalize(value)
+                        if value and value not in reserved and re.search(_pattern([value]), text):
+                            found.add((key, value))
+        literal_evidence[name] = found
+    narrowed = [name for name in names if not any(
+        literal_evidence[name] < literal_evidence[other] for other in names)]
+    if narrowed != names:
+        reason += ' Giá trị lọc được tìm thấy trong dữ liệu giúp phân biệt nguồn.'
+        names = narrowed
+
+    # Only use an unambiguous requested interval as coverage evidence. Do not
+    # resolve relative/missing-year dates differently for different sources.
+    interval = None
+    years = re.findall(r'\b(?:19|20)\d{2}\b', text)
+    date_range = re.search(r'\btu\s+(?:ngay\s+)?(\d{1,2}/\d{1,2}/\d{4})\s+den\s+(?:ngay\s+)?(\d{1,2}/\d{1,2}/\d{4})', text)
+    try:
+        if date_range:
+            interval = tuple(pd.to_datetime(v, format='%d/%m/%Y') for v in date_range.groups())
+        elif len(years) == 1:
+            year = int(years[0])
+            month = re.search(r'\bthang\s+(\d{1,2})\b', text)
+            quarter = re.search(r'\bquy\s+(iv|iii|ii|i|[1-4])\b', text)
+            lo, hi = 1, 12
+            if month:
+                lo = hi = int(month.group(1))
+            elif quarter:
+                value = quarter.group(1)
+                q = {'i': 1, 'ii': 2, 'iii': 3, 'iv': 4}.get(value) or int(value)
+                lo, hi = q * 3 - 2, q * 3
+            interval = (pd.Timestamp(year, lo, 1), pd.Timestamp(year, hi, calendar.monthrange(year, hi)[1]))
+    except (ValueError, OverflowError):
+        interval = None
+    if interval and interval[0] <= interval[1]:
+        from app.services.report_engine import _convert
+        covered = []
+        for name in names:
+            cols = schemas[name].get('date', [])
+            if len(cols) == 1:
+                try:
+                    dates = _convert(sources[name][cols[0]], 'date')
+                    if dates.dt.normalize().between(interval[0], interval[1]).any():
+                        covered.append(name)
+                except (ValueError, TypeError, OverflowError):
+                    pass
+        if covered and len(covered) < len(names):
+            names = covered
+            reason += ' Nguồn có dữ liệu trong khoảng thời gian được yêu cầu.'
+    return names, reason
+
+
+def _selection_result(result, names, reason, ambiguous=False):
+    """Expose selection evidence without assigning a non-executable source."""
+    result['relevant_sources'] = list(names)
+    result['candidate_sources'] = list(names)
+    result['selection_reason'] = reason
+    result['ambiguity_candidates'] = list(names) if ambiguous else []
+    if result['status'] != 'ready':
+        result['source'] = None
+        result['config'] = None
+    return result
 
 
 def plan_report(text: str, sources: dict[str, pd.DataFrame]) -> dict:
@@ -501,13 +636,24 @@ def plan_report(text: str, sources: dict[str, pd.DataFrame]) -> dict:
         for m in re.finditer(_pattern([name]), normalized))]
     if len(explicit) > 1:
         return _result('unsupported', unsupported=['Chưa hỗ trợ kết hợp nhiều nguồn trong một báo cáo.'])
-    names = explicit or list(sources)
+    if explicit:
+        names, reason = explicit, 'Người dùng đã chỉ rõ tên nguồn.'
+    else:
+        names, reason = _source_candidates(normalized, sources)
     plans = [_plan_one(normalized, name, sources[name]) for name in names]
-    ready = [p for p in plans if p['status'] == 'ready']
-    if len(ready) > 1:
-        return _result('clarify', questions=['Có nhiều nguồn phù hợp. Hãy chỉ rõ tên tệp: ' + ', '.join(p['source'] for p in ready)])
-    if ready:
-        return ready[0]
-    clarify = [p for p in plans if p['status'] == 'clarify']
-    return clarify[0] if clarify else plans[0]
-
+    if len(names) == 1:
+        return _selection_result(plans[0], names, reason)
+    # Readiness is not source evidence: a parser/schema problem in one equally
+    # relevant snapshot must not silently select another or combine their rows.
+    if any(p['status'] == 'ready' for p in plans):
+        result = _result('clarify', questions=[
+            'Có nhiều nguồn phù hợp. Hãy chỉ rõ tên tệp: ' + ', '.join(names)])
+        return _selection_result(result, names, reason, ambiguous=True)
+    errors = list(dict.fromkeys(e for p in plans for e in p['unsupported']))
+    questions = list(dict.fromkeys(q for p in plans for q in p['questions']))
+    if errors:
+        result = _result('unsupported', unsupported=errors, questions=questions)
+    else:
+        result = _result('clarify', questions=questions + [
+            'Có nhiều nguồn phù hợp. Hãy chỉ rõ tên tệp: ' + ', '.join(names)])
+    return _selection_result(result, names, reason, ambiguous=not errors)

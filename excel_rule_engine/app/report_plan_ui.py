@@ -11,6 +11,8 @@ def render_pending_report(call_api, add_message):
         st.write(pending.get('text', ''))
         for line in pending.get('explanation', []):
             st.write(f'• {line}')
+        if pending.get('selection_reason'):
+            st.caption(pending['selection_reason'])
         for line in pending.get('warnings', []):
             st.warning(line)
         for line in pending.get('questions', []) + pending.get('unsupported', []):
@@ -19,15 +21,26 @@ def render_pending_report(call_api, add_message):
         if source:
             st.caption(f'Nguồn: {source}')
         if pending.get('status') != 'ready':
-            names = pending.get('available_sources', [])
-            if names:
+            names = pending.get('candidate_sources', pending.get('relevant_sources', pending.get('available_sources', [])))
+            if names and pending.get('status') == 'clarify' and len(names) > 1:
                 selected = st.selectbox('Chọn nguồn để phân tích lại', names, key='plan_source_choice')
                 if st.button('Dùng nguồn này', key='replan_source'):
-                    result = call_api('/api/report/preview', {
+                    endpoint = '/api/report/auto' if st.session_state.get('auto_reports', True) else '/api/report/preview'
+                    result = call_api(endpoint, {
                         'text': pending['text'], 'project': pending['project'], 'source_name': selected,
                     })
-                    if result and not result.get('error'):
-                        st.session_state.pending_report = {**result, 'text': pending['text'], 'project': pending['project']}
+                    if result and result.get('result'):
+                        output = result['result']
+                        add_message('assistant', '**Đã xử lý báo cáo sau khi chọn nguồn.**\n\n' + '\n'.join(output.get('explanation', [])), {
+                            'output_path': output['output_path'], 'project': pending['project'],
+                            'summary': output.get('summary', []), 'detail_preview': output.get('detail_preview', []),
+                            'total_rows': output.get('total_rows'), 'warnings': output.get('warnings', []),
+                        })
+                        st.session_state.pending_report = None
+                        st.rerun()
+                    elif result and not result.get('error'):
+                        plan = result.get('report_plan', result.get('requires_input', result))
+                        st.session_state.pending_report = {**plan, 'text': pending['text'], 'project': pending['project']}
                         st.rerun()
                     else:
                         st.error((result or {}).get('error', 'Không nhận được kế hoạch.'))

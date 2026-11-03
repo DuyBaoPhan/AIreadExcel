@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import unittest
 import tempfile
 from pathlib import Path
@@ -39,13 +39,13 @@ class TestChatRoutingRegression(unittest.TestCase):
         messages = Mock()
         handle = Mock()
         namespace = {
-            'st': SimpleNamespace(session_state=SimpleNamespace(project='demo_project', pending_report=None), spinner=lambda *args: nullcontext()),
+            'st': SimpleNamespace(session_state=type('State', (), {'project': 'demo_project', 'pending_report': None, 'get': lambda self, key, default=None: default})(), spinner=lambda *args: nullcontext()),
             'call_api': api, 'add_message': messages, '_handle_requires_input': handle,
         }
         exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
         namespace['process_command']('top 3 san pham co doanh thu cao nhat')
         self.assertEqual(api.call_count, 1)
-        self.assertEqual(api.call_args.args[0], '/api/report/preview')
+        self.assertEqual(api.call_args.args[0], '/api/report/auto')
         return messages, handle
 
     def test_analytical_request_goes_directly_to_planner(self):

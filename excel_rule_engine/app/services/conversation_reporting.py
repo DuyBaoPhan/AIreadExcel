@@ -29,7 +29,11 @@ def _load_sources(input_dir: Path, source_name: str | None):
         raise ValueError('Toi da 20 tep nguon; hay giam so tep truoc khi lap bao cao.')
     if any(not p.resolve().is_relative_to(root) for p in files):
         raise ValueError('Tep nguon nam ngoai thu muc input.')
-    if sum(p.stat().st_size for p in files) > MAX_SOURCE_BYTES:
+    try:
+        total_size = sum(p.stat().st_size for p in files)
+    except OSError as exc:
+        raise ValueError('Tep nguon da thay doi hoac khong the truy cap; vui long thu lai.') from exc
+    if total_size > MAX_SOURCE_BYTES:
         raise ValueError('Tong dung luong tep nguon vuot gioi han 40 MB.')
     sources, snapshots, warnings = {}, {}, []
     total_bytes = 0
@@ -63,9 +67,14 @@ def _preview(input_dir: Path, text: str, source_name: str | None):
         source, config = plan.get('source'), plan.get('config')
         if not isinstance(source, str) or source not in sources:
             raise ValueError('Ke hoach chon tep nguon khong hop le hoac khong doc duoc.')
+        if source_name is not None and source != source_name:
+            raise ValueError('Tep nguon khong khop lua chon chinh xac.')
         if not isinstance(config, dict):
             raise ValueError('Ke hoach thieu cau hinh bao cao hop le.')
-        serialize_config(config)
+        try:
+            serialize_config(config)
+        except (KeyError, TypeError, OverflowError) as exc:
+            raise ValueError('Cau hinh bao cao khong hop le.') from exc
         canonical = json.dumps({'source': source, 'request': text, 'config': config},
                                ensure_ascii=False, sort_keys=True, separators=(',', ':'),
                                allow_nan=False).encode('utf-8')
@@ -95,6 +104,8 @@ def _evidence_warnings(result: dict, config: dict) -> list[str]:
             raise ValueError('Khong co dong du lieu trong cac ky so sanh.')
     if data.empty:
         raise ValueError('Khong co dong du lieu phu hop; khong tao bao cao rong.')
+    if (config.get('metrics') or config.get('pivot')) and summary.empty:
+        raise ValueError('Khong co bang chung du lieu trong bang tong hop; khong tao bao cao rong.')
     warnings = []
     metrics = config.get('metrics', [])
     for metric in metrics:
@@ -131,24 +142,56 @@ def execute_request(input_dir: Path, project_name: str, text: str,
     if not isinstance(fingerprint, str) or not hmac.compare_digest(
             plan['fingerprint'].encode('ascii'), fingerprint.encode('utf-8')):
         raise ValueError('Du lieu hoac ke hoach da thay doi; vui long xem truoc va xac nhan lai.')
+    return _render_report(plan, sources, project_name, source_name)
+
+
+def automatic_request(input_dir: Path, project_name: str, text: str,
+                      source_name: str | None = None) -> dict:
+    """Plan once and execute a ready read-only report from the same bounded snapshot.
+
+    Ambiguous and unsupported requests return a plan without creating an output.
+    No independent confirm/read pass is used: the user has authorized auto reporting.
+    """
+    plan, sources = _preview(input_dir, text, source_name)
+    if plan.get('status') != 'ready':
+        return {'status': 'requires_input', 'report_plan': plan}
+    return {'status': 'ready',
+            'result': _render_report(plan, sources, project_name, source_name)}
+
+
+def _render_report(plan: dict, sources: dict, project_name: str,
+                   source_name: str | None) -> dict:
+    """Render only validated, evidence-backed snapshots, never the raw input files."""
     if (not isinstance(project_name, str) or not project_name or
             project_name in {'.', '..'} or any(c in project_name for c in '/\\:')):
         raise ValueError('Ten project khong hop le.')
     config = plan['config']
-    result = run_report(sources[plan['source']], config)
-    warnings = list(plan['warnings']) + list(result.get('warnings', []))
-    warnings += _evidence_warnings(result, config)
+    try:
+        result = run_report(sources[plan['source']].copy(deep=True), config)
+        warnings = list(plan['warnings']) + list(result.get('warnings', []))
+        warnings += _evidence_warnings(result, config)
+    except (KeyError, TypeError, OverflowError) as exc:
+        raise ValueError('Du lieu hoac cau hinh khong hop le de tao bao cao.') from exc
     result['warnings'] = warnings
     blob = build_advanced_report_bytes(result, config)
-    # Fully render before opening a unique output; never overwrite uploaded input.
-    output = safe_output_path(project_name, f'planned_report_{uuid4().hex}.xlsx')
-    with output.open('xb') as stream:
-        stream.write(blob)
     records = json.loads(result['summary'].to_json(orient='records', date_format='iso'))
     detail_preview = (json.loads(result['data'].head(50).to_json(orient='records', date_format='iso'))
                       if not config.get('metrics') and not config.get('pivot') else [])
+    # Render and serialize fully before creating a unique output.
+    output = safe_output_path(project_name, f'planned_report_{uuid4().hex}.xlsx')
+    with output.open('xb') as stream:
+        stream.write(blob)
     return {'output_path': str(output), 'report_type': 'planned',
             'detail_preview': detail_preview,
             'total_rows': len(result['data']), 'files_included': 1,
             'source_file': plan['source'], 'summary': records,
+            'selection_reason': plan.get('selection_reason', ''),
+            'candidate_sources': plan.get('candidate_sources', [plan['source']]),
+            'source_selection': {'mode': 'explicit' if source_name is not None else 'automatic',
+                                 'requested_source': source_name, 'selected_source': plan['source'],
+                                 'available_sources': plan['available_sources']},
+            'evidence': {'snapshot_fingerprint': plan['fingerprint'],
+                         'source_rows': len(sources[plan['source']]),
+                         'matched_rows': len(result['data']),
+                         'summary_rows': len(result['summary']), 'config': config},
             'explanation': plan.get('explanation', []), 'warnings': warnings}
