@@ -21,6 +21,7 @@ SCHEMA_ALIASES = {
     'department': ('phong ban', 'department', 'phong'),
     'region': ('khu vuc', 'region', 'vung', 'mien'),
     'status': ('trang thai', 'status'),
+    'employee_name': ('ten nhan vien', 'ho ten', 'ho va ten', 'employee name', 'employee_name', 'name'),
     'employee_id': ('ma nhan vien', 'employee id', 'employee_id', 'manv'),
     'order_id': ('ma don hang', 'order id', 'order_id', 'ma don'),
     'date': ('ngay', 'date', 'ngay ban', 'ngay giao dich', 'order date', 'thang', 'month', 'period'),
@@ -218,17 +219,16 @@ def _plan_one(text, name, df):
                 metric['operation'] = 'count'
                 metric['alias'] = metric['alias'].removesuffix('Sum').removesuffix('Mean') + 'Count'
 
-    for m in matches(r'\btop\s+(\d+)\b'):
-        mark(*m.span())
-        for qualifier in matches(r'\bcao nhat\b'):
-            mark(*qualifier.span())
-        n = int(m.group(1))
-        if n < 1 or n > 10000:
-            errors.append('Top N phải trong 1–10000.')
-        elif len(config['metrics']) != 1 or not config['group_by']:
-            questions.append('Top N cần một chỉ tiêu và một nhóm xếp hạng rõ ràng.')
-        else:
-            config['top_n'] = {'column': config['metrics'][0]['alias'], 'n': n, 'ascending': False}
+    # Ranking qualifiers are grammar only in an explicit, bounded ranking.
+    highest = ('cao nhat', 'lon nhat', 'nhieu nhat', 'highest', 'largest', 'greatest', 'most')
+    lowest = ('thap nhat', 'nho nhat', 'it nhat', 'lowest', 'smallest', 'least')
+    qualifiers = [m for m in matches(_pattern(highest + lowest))
+                  if not any(used[m.start():m.end()])]
+    tops = matches(r'\btop\s+(\d+)\b')
+    ranking = bool(tops or qualifiers)
+    directions = {normalize(m.group()) in lowest for m in qualifiers}
+    if len(directions) > 1 or len(tops) > 1:
+        return _result('clarify', questions=['Bạn muốn xếp hạng cao nhất hay thấp nhất, và lấy bao nhiêu kết quả?'])
 
     # A named dimension must mean a group or a literal filter, not vanish.
     for key in DIMENSIONS:
@@ -238,20 +238,64 @@ def _plan_one(text, name, df):
         cols = schema[key]
         filtered = any(f['column'] in cols for f in config['filters'])
         if not filtered:
-            if re.search(r'\btop\s+\d+\b', text) or config['group_by']:
+            if ranking or config['group_by']:
                 col = column(key)
                 if col and col not in config['group_by']:
                     config['group_by'].append(col)
             else:
-                questions.append(f'B?n mu?n nh?m theo {key} hay l?c gi? tr? n?o?')
+                questions.append(f'Bạn muốn nhóm theo {key} hay lọc giá trị nào?')
         for m in mentions:
             mark(*m.span())
-    # Natural top N dimension phrases imply the ranking group.
-    if re.search(r'\btop\s+\d+\b', text) and config['group_by'] and len(config['metrics']) == 1:
-        n = int(re.search(r'\btop\s+(\d+)\b', text).group(1))
-        if 1 <= n <= 10000:
-            config['top_n'] = {'column': config['metrics'][0]['alias'], 'n': n, 'ascending': False}
-            questions[:] = [q for q in questions if not normalize(q).startswith('top n')]
+
+    # Employee rankings must preserve identity, not merge people sharing a name.
+    employees = [m for m in matches(_pattern(['nhan vien', 'employee', 'employees']))
+                 if not any(used[m.start():m.end()])]
+    if ranking and employees:
+        ids, names = schema['employee_id'], schema['employee_name']
+        if ids:
+            identity = column('employee_id')
+            if identity:
+                if df[identity].isna().any():
+                    questions.append('Mã nhân viên bị thiếu; cần xác định danh tính trước khi xếp hạng.')
+                config['group_by'].append(identity)
+            if names:
+                display = column('employee_name')
+                if display and identity:
+                    if df.groupby(identity)[display].nunique().gt(1).any():
+                        questions.append('One employee ID has multiple names; clarify identity before ranking.')
+                    # Null display names must not drop an otherwise identified person.
+                    if not df[display].isna().any():
+                        config['group_by'].append(display)
+        elif names:
+            display = column('employee_name')
+            if display:
+                if df[display].isna().any() or df[display].duplicated().any():
+                    questions.append('Tên nhân viên trùng hoặc thiếu; cần mã nhân viên để phân biệt danh tính.')
+                config['group_by'].append(display)
+        else:
+            questions.append('Cần cột mã hoặc tên nhân viên để xếp hạng từng người.')
+        for m in employees:
+            mark(*m.span())
+
+    if ranking:
+        n = int(tops[0].group(1)) if tops else 1
+        if n < 1 or n > 10000:
+            errors.append('Top N phải trong 1–10000.')
+        elif len(config['metrics']) != 1 or not config['group_by']:
+            # A bare metric superlative has no safe entity to rank.
+            if tops or employees or config['group_by']:
+                questions.append('Top N cần một chỉ tiêu và một nhóm xếp hạng rõ ràng.')
+            else:
+                errors.append('Cần chỉ rõ nhóm để xếp hạng chỉ tiêu.')
+        else:
+            config['top_n'] = {'column': config['metrics'][0]['alias'], 'n': n,
+                               'ascending': next(iter(directions), False)}
+        for m in tops + qualifiers:
+            mark(*m.span())
+        # "which" is meaningful only when attached to a ranking entity.
+        if config['group_by'] or employees:
+            for m in matches(r'\bnao\b'):
+                mark(*m.span())
 
     # Multiple metrics with differently scoped operators require clarification.
     metric_columns = {m.get('column') for m in config['metrics'] if m.get('column')}

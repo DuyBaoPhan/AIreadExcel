@@ -229,7 +229,14 @@ def _handle_requires_input(
     input_type = requires_input.get("type")
     if input_type == "report_plan":
         st.session_state.pending_report = requires_input
-        add_message("assistant", "Đã phân tích yêu cầu. Hãy kiểm tra kế hoạch bên dưới trước khi tạo báo cáo.", meta)
+        status = requires_input.get("status")
+        if status == "ready":
+            message = 'Đã lập kế hoạch. Hãy kiểm tra bên dưới trước khi tạo báo cáo.'
+        elif status == "unsupported":
+            message = 'Yêu cầu có phần chưa được hỗ trợ. Chưa có báo cáo nào được tạo; xem chi tiết bên dưới.'
+        else:
+            message = 'Chưa thể tạo báo cáo vì yêu cầu còn điểm chưa xác định. Hãy xem câu hỏi bên dưới.'
+        add_message("assistant", message, meta)
         return
     message = requires_input.get("message", "Cần thêm thông tin.")
 

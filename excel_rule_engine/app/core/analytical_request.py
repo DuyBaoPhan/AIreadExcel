@@ -14,4 +14,4 @@ def is_analytical_request(text: str) -> bool:
         return False
     return bool(re.search(
         r'\b(doanh thu|doanh so|loi nhuan|chi phi|revenue|profit|cost|top|trung binh|'
-        r'bao cao|tong luong|quy luong|dem|bao nhieu|theo thang|theo quy|theo nam)\b', value))
+        r'bao cao|luong|salary|payroll|highest|lowest|largest|smallest|tong luong|quy luong|dem|bao nhieu|theo thang|theo quy|theo nam)\b', value))

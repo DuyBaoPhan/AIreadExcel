@@ -386,6 +386,37 @@ async def health():
     return {"status": "ok", "service": "Excel Rule Engine"}
 
 
+class ReportPlanRequest(BaseModel):
+    text: str
+    project: str = "demo_project"
+    source_name: str | None = None
+
+
+class ConfirmReportRequest(ReportPlanRequest):
+    fingerprint: str
+
+
+@app.post("/api/report/preview")
+async def preview_conversation_report(req: ReportPlanRequest):
+    """Inspect an explicit source selection; never generate an output here."""
+    from app.services.conversation_reporting import preview_request
+    try:
+        return preview_request(get_input_dir(req.project), req.text, req.source_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/report/confirm")
+async def confirm_conversation_report(req: ConfirmReportRequest):
+    """Rebuild and validate the approved plan against current source bytes."""
+    from app.services.conversation_reporting import execute_request
+    try:
+        return {"result": execute_request(get_input_dir(req.project), req.project, req.text,
+                                          req.source_name, req.fingerprint)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 if __name__ == "__main__":
     import subprocess
     import sys
@@ -420,36 +451,3 @@ if __name__ == "__main__":
         uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=False)
     finally:
         st_process.terminate()
-
-
-
-
-class ReportPlanRequest(BaseModel):
-    text: str
-    project: str = "demo_project"
-    source_name: str | None = None
-
-
-class ConfirmReportRequest(ReportPlanRequest):
-    fingerprint: str
-
-
-@app.post("/api/report/preview")
-async def preview_conversation_report(req: ReportPlanRequest):
-    """Inspect an explicit source selection; never generate an output here."""
-    from app.services.conversation_reporting import preview_request
-    try:
-        return preview_request(get_input_dir(req.project), req.text, req.source_name)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/api/report/confirm")
-async def confirm_conversation_report(req: ConfirmReportRequest):
-    """Rebuild and validate the approved plan against current source bytes."""
-    from app.services.conversation_reporting import execute_request
-    try:
-        return {"result": execute_request(get_input_dir(req.project), req.project, req.text,
-                                          req.source_name, req.fingerprint)}
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
