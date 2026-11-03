@@ -13,6 +13,7 @@ import requests
 import streamlit as st
 
 from app.services.download_service import EXCEL_MIME, fetch_output_file
+from app.report_wizard import render_report_wizard
 
 # ──────────────────────────────────────────────────────────────
 #  Config
@@ -386,6 +387,10 @@ try:
         st.error("❌ API Server gặp sự cố")
 except Exception:
     st.error("❌ Không kết nối được API Server. Chạy: `uvicorn app.main:app --reload`")
+
+st.divider()
+
+render_report_wizard()
 
 st.divider()
 

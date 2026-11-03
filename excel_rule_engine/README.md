@@ -201,3 +201,18 @@ Người dùng nhập câu lệnh
 [Response Generator] - Trả kết quả + file output
 ```
 
+
+## Tạo báo cáo từ file upload
+
+Trên giao diện Streamlit, mở mục **Tạo báo cáo từ file của bạn**:
+
+1. Upload một file `.xlsx` hoặc `.csv` (tối đa 20 MB, 100.000 dòng dữ liệu).
+2. Chọn sheet và dòng tiêu đề (đánh số từ 1). Kiểm tra bản xem trước 50 dòng.
+3. Chọn mẫu Tổng hợp, Nhân sự hoặc Doanh thu / bán hàng.
+4. Điền tên đơn vị, tiêu đề, kỳ báo cáo và người lập. Kỳ báo cáo chỉ là nhãn hiển thị, không lọc dữ liệu.
+5. Với mẫu Nhân sự, chọn cột phòng ban và tùy chọn cột lương dạng số. Mẫu bán hàng cần cột phân nhóm và cột doanh thu dạng số.
+6. Bấm **Tạo báo cáo Excel**, sau đó **Tải báo cáo Excel**.
+
+Báo cáo chỉ sử dụng sheet đã chọn, không trộn với file demo. Dữ liệu được xử lý trong bộ nhớ và không ghi vào thư mục input/output dùng chung. File upload không được tự thêm vào nguồn của chatbot. Tải file về trước khi đóng hoặc khởi động lại ứng dụng; đây không phải kho lưu trữ bền vững.
+
+Mỗi dòng là một bản ghi, không tự loại trùng hay suy luận mã nhân viên. Người dùng phải chọn đúng cột tiền; không chọn mã định danh hoặc cộng các loại tiền tệ khác nhau. Ô tiền trống không được suy đoán; kiểm tra cảnh báo chất lượng trước khi sử dụng số liệu.
