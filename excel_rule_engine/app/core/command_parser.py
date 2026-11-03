@@ -119,6 +119,16 @@ def parse_command(raw_text: str) -> ParsedCommand:
     Raises không có ngoại lệ; thay vào đó trả về ParsedCommand.error_message
     khi thiếu thông tin.
     """
+    from app.workflows.revenue_report import is_revenue_request, parse_revenue_request
+    if is_revenue_request(raw_text) and classify_intent(raw_text).intent != Intent.DELETE:
+        try:
+            parse_revenue_request(raw_text)
+            error = None
+        except ValueError as exc:
+            error = str(exc)
+        return ParsedCommand(intent="EXPORT", confidence=1.0,
+                             parameters={"report_type": "revenue"},
+                             error_message=error, raw_text=raw_text)
     intent_result: IntentResult = classify_intent(raw_text)
     intent = intent_result.intent
     entities = extract_entities(raw_text)

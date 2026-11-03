@@ -15,6 +15,7 @@ import streamlit as st
 from app.services.download_service import EXCEL_MIME, fetch_output_file
 from app.report_wizard import render_report_wizard
 from app.advanced_report_wizard import render_advanced_report_wizard
+from app.report_plan_ui import render_pending_report
 from app.ui_theme import inject_theme, render_hero, render_empty_chat, render_section_intro, render_sidebar_brand
 
 # ──────────────────────────────────────────────────────────────
@@ -104,6 +105,9 @@ def render_message(msg: dict, message_index: int = 0):
                 key=f"chat_download_{message_index}",
             )
 
+        if meta.get('summary'):
+            st.dataframe(meta['summary'], use_container_width=True)
+
         if meta.get("file_list"):
             _render_file_list(meta["file_list"])
 
@@ -147,6 +151,7 @@ def _render_file_list(files: list[dict]):
 
 def process_command(user_text: str):
     """Gửi lệnh tới API và xử lý phản hồi."""
+    st.session_state.pending_report = None
     add_message("user", user_text)
 
     with st.spinner("Đang xử lý..."):
@@ -210,6 +215,10 @@ def _handle_requires_input(
 ):
     """Xử lý khi cần thêm thông tin từ người dùng."""
     input_type = requires_input.get("type")
+    if input_type == "report_plan":
+        st.session_state.pending_report = requires_input
+        add_message("assistant", "Đã phân tích yêu cầu. Hãy kiểm tra kế hoạch bên dưới trước khi tạo báo cáo.", meta)
+        return
     message = requires_input.get("message", "Cần thêm thông tin.")
 
     if input_type == "primary_key":
@@ -271,6 +280,12 @@ def _handle_success_result(intent: str, result: dict, meta: dict):
             msg = "📁 Không tìm thấy file Excel nào."
         add_message("assistant", msg, meta)
         return
+    elif intent == "EXPORT" and result.get("report_type") == "revenue":
+        msg = (
+            f"**Doanh thu {result['product']} năm {result['year']}: {result['revenue_total']:,.2f}**\n\n"
+            f"Nguồn: {result['source_file']} · {result['total_rows']} dòng phù hợp. "
+            "Đơn vị tiền tệ theo dữ liệu nguồn."
+        )
     elif intent == "EXPORT":
         msg = (
             f"✅ **Tạo báo cáo thành công!**\n"
@@ -293,6 +308,7 @@ def handle_pending_comparison(user_text: str) -> bool:
         return False
 
     primary_key = user_text.strip()
+    st.session_state.pending_report = None
     add_message("user", user_text)
 
     with st.spinner("Đang so sánh dữ liệu..."):
@@ -428,12 +444,14 @@ else:
                 st.download_button("Lưu hội thoại", data=history, file_name="conversation.txt", mime="text/plain", key="save_chat")
                 confirm_clear = st.checkbox("Xác nhận xóa lịch sử phiên", key="confirm_clear_chat")
                 if st.button("Xóa hội thoại", disabled=not confirm_clear, key="clear_chat"):
+                    st.session_state.pending_report = None
                     st.session_state.messages = []
                     st.session_state.pending_comparison = None
                     st.rerun()
     # Hiển thị lịch sử chat
     for message_index, msg in enumerate(st.session_state.messages):
         render_message(msg, message_index)
+    render_pending_report(call_api, add_message)
     # Chat input
     placeholder = "Nhập tên cột khóa, ví dụ employee_id…" if st.session_state.pending_comparison else "Bạn muốn xử lý dữ liệu như thế nào? Ví dụ: lọc nhân viên có lương trên 10 triệu…"
     if prompt := st.chat_input(placeholder, disabled=not online, key="workspace_chat_input"):

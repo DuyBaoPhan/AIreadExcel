@@ -1,0 +1,3 @@
+﻿# Test tools only; application dependencies remain in the shared list.
+-r requirements.txt
+pytest>=8.0,<10

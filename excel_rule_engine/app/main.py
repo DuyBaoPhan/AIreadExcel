@@ -123,6 +123,24 @@ async def handle_command(req: CommandRequest) -> CommandResponse:
     intent_disp = generate_intent_display(parsed)
     workflow_disp = generate_workflow_display(parsed)
 
+    from app.core.analytical_request import is_analytical_request
+    if is_analytical_request(req.text) and parsed.intent != "DELETE":
+        from app.services.conversation_reporting import preview_request
+        try:
+            plan = preview_request(get_input_dir(req.project), req.text)
+            update_task_status(task_id, "pending")
+            return CommandResponse(
+                session_id=session_id, task_id=task_id,
+                intent_display="Report planner", workflow_display="Preview and confirm",
+                parsed={"intent": "EXPORT", "raw_text": req.text, "parameters": {"report_type": "planned"}},
+                requires_input={"type": "report_plan", "text": req.text, "project": req.project, **plan},
+            )
+        except ValueError as exc:
+            update_task_status(task_id, "failed", error_msg=str(exc))
+            return CommandResponse(session_id=session_id, task_id=task_id,
+                                   intent_display="Report planner", workflow_display="Needs clarification",
+                                   parsed=parsed.to_dict(), error=str(exc))
+
     # Trường hợp không nhận diện được
     if parsed.intent == Intent.UNKNOWN or parsed.error_message:
         update_task_status(task_id, "failed", error_msg=parsed.error_message)
@@ -253,7 +271,11 @@ async def _execute_workflow(
         }
 
     if parsed.intent == "EXPORT":
-        result = run_export_report(input_dir=input_dir, project_name=project)
+        if params.get("report_type") == "revenue":
+            from app.workflows.revenue_report import run_revenue_request
+            result = run_revenue_request(input_dir, project, parsed.raw_text)
+        else:
+            result = run_export_report(input_dir=input_dir, project_name=project)
         update_task_status(task_id, "done", result_path=result["output_path"])
         return {"result": result}
 
@@ -400,3 +422,34 @@ if __name__ == "__main__":
         st_process.terminate()
 
 
+
+
+class ReportPlanRequest(BaseModel):
+    text: str
+    project: str = "demo_project"
+    source_name: str | None = None
+
+
+class ConfirmReportRequest(ReportPlanRequest):
+    fingerprint: str
+
+
+@app.post("/api/report/preview")
+async def preview_conversation_report(req: ReportPlanRequest):
+    """Inspect an explicit source selection; never generate an output here."""
+    from app.services.conversation_reporting import preview_request
+    try:
+        return preview_request(get_input_dir(req.project), req.text, req.source_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/report/confirm")
+async def confirm_conversation_report(req: ConfirmReportRequest):
+    """Rebuild and validate the approved plan against current source bytes."""
+    from app.services.conversation_reporting import execute_request
+    try:
+        return {"result": execute_request(get_input_dir(req.project), req.project, req.text,
+                                          req.source_name, req.fingerprint)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -12,6 +12,8 @@ __pycache__/
 # Outputs & temp files
 projects/*/output/*
 !projects/*/output/.gitkeep
+excel_rule_engine/projects/*/output/*
+!excel_rule_engine/projects/*/output/.gitkeep
 .streamlit/credentials.toml
 
 # IDE & OS files

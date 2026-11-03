@@ -245,3 +245,31 @@ Thanh bên chia ba không gian độc lập: **Chatbot**, **Tạo báo cáo** v�
 Thư viện file dự án chỉ tải khi bật **Mở thư viện file dự án**; chọn một kết quả để tải thay vì nạp tất cả file. Hội thoại có thể lưu thành văn bản, xóa cần xác nhận. Chuyển công cụ không xóa lịch sử chat. Tác vụ đối chiếu đang chờ có nút hủy riêng.
 
 Theme dark/cyan tự chứa, không gọi font/CDN ngoài; có trạng thái focus bàn phím và hỗ trợ giảm chuyển động. Theme Streamlit ở `.streamlit/config.toml` tại thư mục gốc và thư mục engine để chạy từ cả hai vị trí. Khởi động lại Streamlit sau khi đổi cấu hình theme. Không có thay đổi thuật toán tính toán hoặc quyền truy cập dữ liệu trong lần thiết kế giao diện này.
+
+## Vệ sinh repository và cài thư viện
+
+Danh sách thư viện dùng chung nằm tại `requirements.txt` ở gốc repository. Bản `excel_rule_engine/requirements.txt` tham chiếu danh sách đó bằng `-r ../requirements.txt`, nên có thể tiếp tục cài từ cả hai thư mục mà không duy trì hai bộ phiên bản khác nhau. Giữ nguyên chính sách khoảng phiên bản của bản gốc; đây chưa phải lockfile tái lập môi trường.
+
+File sinh trong `excel_rule_engine/projects/*/output/` được Git bỏ qua, ngoại trừ `.gitkeep`. Các báo cáo cũ đã được bỏ theo dõi trong index, không xóa file trên máy thực hiện dọn dẹp và không viết lại lịch sử Git. Sau khi commit/pull thay đổi này ở máy khác, các bản output từng được theo dõi có thể bị Git xóa tại đó; sao lưu báo cáo cần giữ trước khi cập nhật. Có thể tạo lại mẫu bằng `python tests/create_advanced_reports.py` từ thư mục engine.
+
+## Chatbot hiểu yêu cầu báo cáo theo dữ liệu (không LLM)
+
+Yêu cầu phân tích cụ thể được chuyển sang bộ lập kế hoạch dựa trên tên cột và giá trị thật của file, không còn chỉ bắt từ “báo cáo” rồi gộp toàn bộ nguồn. Chatbot hiển thị nguồn, chỉ tiêu, nhóm và điều kiện; người dùng phải bấm **Xác nhận và tạo báo cáo**. Khi có nhiều nguồn phù hợp, chọn nguồn và phân tích lại; khi câu còn mơ hồ, gửi lại câu đầy đủ đã làm rõ. Đây chưa phải hội thoại suy luận tự do.
+
+Các mẫu câu trong phạm vi hỗ trợ:
+- “Báo cáo doanh thu của Laptop Pro X năm 2024 là bao nhiêu?”
+- “Tổng doanh thu theo sản phẩm năm 2024”
+- “Lợi nhuận theo khu vực”
+- “Doanh thu trung bình theo sản phẩm”
+- “Lương trung bình theo phòng ban IT”
+- “Đếm nhân viên theo phòng ban” (đếm mã nhân viên duy nhất)
+- “Đếm dòng doanh thu từ 10 đến 30 triệu”
+- “Top 5 sản phẩm doanh thu cao nhất”
+
+Tên sản phẩm/phòng ban/khu vực/trạng thái được khớp từ dữ liệu thật, không hard-code. Tên cột có thể Việt/Anh theo từ điển `SCHEMA_ALIASES` trong `app/core/report_planner.py`. Chuẩn hóa dấu chỉ dùng khi nhận diện; bộ lọc giữ giá trị gốc. Nhiều cột đồng nghĩa hoặc nhiều nguồn đều cần làm rõ. Giá trị tháng YYYY-MM có thể lọc năm; tháng không có năm không được tự suy đoán, trừ khi nguồn xác định duy nhất một năm (hiển thị kế hoạch để kiểm tra).
+
+Chưa hỗ trợ qua câu tự nhiên: dự báo, nối nhiều nguồn, so sánh kỳ, điều kiện OR/loại trừ phức tạp, công thức nghiệp vụ tùy ý hoặc nối tiếp ngữ cảnh kiểu “còn tháng trước?”. Sử dụng Báo cáo nâng cao cho các phép toán có giao diện tương ứng. Nếu còn cụm điều kiện chưa nhận diện, chatbot phải hỏi/từ chối, không xuất thay bằng báo cáo tổng hợp. Các câu xuất tổng hợp chung rõ ràng vẫn dùng luồng cũ.
+
+Xác nhận gắn với dấu kiểm tra SHA-256 của yêu cầu, nguồn và cấu hình. Dữ liệu thay đổi cần xem/xác nhận lại; đây là kiểm tra tính nhất quán, **không phải đăng nhập hoặc phân quyền**. Tối đa 20 nguồn/40 MB tổng; chatbot đọc sheet đầu, muốn chọn sheet khác dùng công cụ upload báo cáo. Không có bản ghi phù hợp hoặc không có bằng chứng số liệu thì không tạo báo cáo bằng 0 giả. Kết quả bảng được hiển thị trong hội thoại và xuất Excel có cấu hình.
+
+Kiểm thử toàn bộ (bao gồm tập câu tiếng Việt): cài `pip install -r requirements-dev.txt` từ gốc, chạy `python -m pytest`. Không thêm pytest vào phụ thuộc chạy Cloud.
