@@ -299,3 +299,9 @@ Chatbot mặc định bật **Tự động tạo báo cáo**: chọn nguồn d�
 **Streamlit Cloud:** đưa toàn bộ mã mới lên đúng repository/branch của app, sau đó chọn **Reboot app** trong phần quản lý ứng dụng. Backend cần có cả các tuyến lập kế hoạch, xác nhận và `POST /api/report/auto`; chỉ tải lại trang trình duyệt không bảo đảm backend cũ đã được thay. Không chuyển sang gộp file khi gặp HTTP 404.
 
 Kết quả kiểm thử và giới hạn của đợt nâng cấp: [automatic_reporting_results.md](../docs/automatic_reporting_results.md).
+
+### Quy tắc ưu tiên nguồn theo phòng ban
+
+Dự án có thể khai báo `source_policy.json` cạnh thư mục `input`, với `version: 1` và bảng `department_sources` ánh xạ tên phòng ban sang tên tệp chính xác. Đây là cấu hình nghiệp vụ rõ ràng, không phải suy đoán tên tệp. Dự án demo đã khai báo IT → Employees_IT.xlsx; HR/Accounting/Sales/Marketing/Finance → Employees_Business.xlsx; Warehouse/Production/Admin/Engineering → Employees_Operations.xlsx.
+
+Quy tắc chỉ áp dụng khi câu hỏi đã được phân tích thành điều kiện phòng ban bằng chính xác và nguồn được cấu hình nằm trong các nguồn phù hợp. Người dùng chỉ rõ tệp sẽ ghi đè ưu tiên này. Cấu hình thiếu hoặc tệp không còn tồn tại không dẫn đến tự gộp/chọn nguồn khác; cấu hình hỏng được báo lỗi. Câu hỏi toàn công ty vẫn cần một nguồn chính được xác định riêng; không tự coi Root hoặc Update là nguồn chính.

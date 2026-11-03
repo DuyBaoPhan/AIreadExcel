@@ -1,0 +1,15 @@
+﻿{
+  "version": 1,
+  "department_sources": {
+    "IT": "Employees_IT.xlsx",
+    "HR": "Employees_Business.xlsx",
+    "Accounting": "Employees_Business.xlsx",
+    "Sales": "Employees_Business.xlsx",
+    "Marketing": "Employees_Business.xlsx",
+    "Finance": "Employees_Business.xlsx",
+    "Warehouse": "Employees_Operations.xlsx",
+    "Production": "Employees_Operations.xlsx",
+    "Admin": "Employees_Operations.xlsx",
+    "Engineering": "Employees_Operations.xlsx"
+  }
+}

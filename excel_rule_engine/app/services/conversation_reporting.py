@@ -13,6 +13,7 @@ from app.services.file_manager import list_excel_files, safe_output_path
 from app.services.report_builder import read_uploaded_table
 from app.services.report_engine import run_report, serialize_config
 from app.core.report_planner import plan_report
+from app.services.source_policy import apply_source_policy
 
 MAX_SOURCE_FILES = 20
 MAX_SOURCE_BYTES = 40 * 1024 * 1024
@@ -61,6 +62,8 @@ def _preview(input_dir: Path, text: str, source_name: str | None):
         raise ValueError('Vui long nhap yeu cau bao cao.')
     sources, snapshots, names, warnings = _load_sources(input_dir, source_name)
     plan = dict(plan_report(text, sources))
+    if source_name is None:
+        plan = apply_source_policy(input_dir, text, sources, plan)
     plan.update(available_sources=names, warnings=warnings)
     plan.pop('fingerprint', None)
     if plan.get('status') == 'ready':

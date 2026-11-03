@@ -39,3 +39,17 @@ From the repository root, using the project's virtual environment:
 .\excel_rule_engine\venv\Scripts\python.exe -m compileall -q excel_rule_engine/app
 git diff --check
 ```
+
+## Follow-up: department source policy
+
+Added project-owned `source_policy.json` and a service resolver. Policy selection uses the parsed exact department filter, never a filename heuristic. It only resolves multiple relevant candidates; explicit selection overrides it, unsupported clauses remain unsupported, and missing/stale configuration does not guess another source. Invalid configuration fails without export.
+
+Eleven policy tests passed. Demo data smoke checks:
+
+- List IT employees → Employees_IT.xlsx, 15 matching rows.
+- Highest salary in IT → Employees_IT.xlsx, IT005 / Hoàng Văn Em, 45,000,000.
+- List HR employees → Employees_Business.xlsx, 2 matching rows.
+
+This supersedes source ambiguity for explicitly configured departments only. Unscoped company-wide questions still require an authoritative source; no union or Root/Update precedence was invented.
+
+Final follow-up verification: **1,056 tests passed; 56 subtests passed**. Compilation and diff whitespace checks succeeded. Two existing FastAPI deprecation warnings and non-failing Git line-ending notices remain.
