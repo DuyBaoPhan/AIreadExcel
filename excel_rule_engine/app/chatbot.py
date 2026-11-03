@@ -107,6 +107,9 @@ def render_message(msg: dict, message_index: int = 0):
 
         if meta.get('summary'):
             st.dataframe(meta['summary'], use_container_width=True)
+        if meta.get('detail_preview'):
+            st.caption(f"Xem trước tối đa 50 dòng / {meta.get('total_rows', '?')} dòng phù hợp. File Excel chứa toàn bộ kết quả.")
+            st.dataframe(meta['detail_preview'], use_container_width=True)
 
         if meta.get("file_list"):
             _render_file_list(meta["file_list"])

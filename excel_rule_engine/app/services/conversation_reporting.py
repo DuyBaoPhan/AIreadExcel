@@ -145,7 +145,10 @@ def execute_request(input_dir: Path, project_name: str, text: str,
     with output.open('xb') as stream:
         stream.write(blob)
     records = json.loads(result['summary'].to_json(orient='records', date_format='iso'))
+    detail_preview = (json.loads(result['data'].head(50).to_json(orient='records', date_format='iso'))
+                      if not config.get('metrics') and not config.get('pivot') else [])
     return {'output_path': str(output), 'report_type': 'planned',
+            'detail_preview': detail_preview,
             'total_rows': len(result['data']), 'files_included': 1,
             'source_file': plan['source'], 'summary': records,
             'explanation': plan.get('explanation', []), 'warnings': warnings}

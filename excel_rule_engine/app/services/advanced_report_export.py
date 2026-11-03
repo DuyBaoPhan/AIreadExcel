@@ -59,7 +59,9 @@ def build_advanced_report_bytes(
         ws.row_dimensions[row].height = 25
     _literal(ws, 9, 1, 'TỔNG QUAN KẾT QUẢ')
     # Display only a small excerpt here; Summary always contains the complete result.
-    preview = summary.head(15).iloc[:, :5]
+    # Detail-only reports use Data as the complete result instead.
+    display = summary if not summary.empty else data
+    preview = display.head(15).iloc[:, :5]
     write_table(ws, preview, 'OverviewPreview', start_row=11)
     for c in range(1, 16):
         ws.column_dimensions[get_column_letter(c)].width = 18

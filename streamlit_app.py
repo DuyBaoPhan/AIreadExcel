@@ -29,6 +29,12 @@ def start_fastapi():
         import requests
         res = requests.get("http://localhost:8000/health", timeout=1)
         if res.status_code == 200:
+            from app.services.backend_capabilities import check_report_api
+            compatible, diagnostic = check_report_api()
+            if not compatible:
+                import streamlit as st
+                st.error(diagnostic + '. Backend đang chạy không tương thích. Local: dừng phiên cũ bằng Ctrl+C rồi chạy lại. Streamlit Cloud: cập nhật mã và Reboot app. Không tự tắt tiến trình đang chiếm cổng.')
+                st.stop()
             return
     except Exception:
         pass

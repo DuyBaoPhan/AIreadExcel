@@ -31,6 +31,17 @@ def main():
     print("      EXCEL RULE ENGINE - KHOI DONG HE THONG")
     print("=" * 60)
 
+    # Fail before launching UI when another process already owns the API port.
+    import socket
+    with socket.socket() as probe:
+        occupied = probe.connect_ex(("127.0.0.1", 8000)) == 0
+    if occupied:
+        from app.services.backend_capabilities import check_report_api
+        compatible, diagnostic = check_report_api()
+        print("[!] Port 8000 dang duoc su dung. " + ("Backend da chay." if compatible else diagnostic))
+        print("Dung phien cu bang Ctrl+C trong terminal cua no, sau do chay lai. Khong tu tat tien trinh khac.")
+        return
+
     # 1. Khởi tạo DB nếu chưa có
     from app.database.db import init_db
     init_db()

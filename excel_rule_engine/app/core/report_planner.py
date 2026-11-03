@@ -108,6 +108,18 @@ def _plan_one(text, name, df):
             if col:
                 config['group_by'].append(col)
 
+    # Explicit employee listings preserve source rows, not salary aggregates.
+    # Keep this grammar narrow: unfamiliar constraints still fail span coverage.
+    detail_phrases = matches(r'\b(?:loc|liet ke|danh sach)\s+(?:cac\s+)?nhan vien\b')
+    employee_detail = bool(detail_phrases)
+    for m in detail_phrases:
+        mark(*m.span())
+    if employee_detail:
+        if not schema['employee_id'] and not schema['employee_name']:
+            questions.append('Cần cột mã hoặc tên nhân viên để liệt kê nhân viên.')
+        if config['group_by']:
+            questions.append('Danh sách chi tiết không tổng hợp theo nhóm; hãy chỉ rõ lọc từng dòng hoặc báo cáo tổng hợp.')
+
     # Absolute quarters and date ranges become inclusive row filters. They are
     # parsed before single months/years so their scope cannot be discarded.
     quarter_pattern = r'\bquy\s+(iv|iii|ii|i|[1-9])(?:\s*(?:/|-|nam)\s*(\d{4}))?\b'
@@ -249,7 +261,7 @@ def _plan_one(text, name, df):
                        'hay', 'lam on', 'giup toi', 'giup minh', 'cho toi', 'cho minh',
                        'cho biet', 'ban hay', 'toi muon', 'toi can', 'xem', 'nhe',
                        'tinh', 'xuat', 'lap', 'tao', 'la', 'co', 'trong', 'vao', 'voi',
-                       'du lieu', 'file', 'tep', 'tu file'}
+                       'du lieu', 'file', 'tep', 'tu file', 'loc', 'liet ke', 'danh sach', 'cac'}
     reserved_values.update(normalize(a) for aliases in SCHEMA_ALIASES.values() for a in aliases)
     for key in DIMENSIONS:
         for col in schema[key]:
@@ -307,7 +319,7 @@ def _plan_one(text, name, df):
     for m in matches(_pattern(['dem dong', 'so dong', 'bao nhieu dong', 'so ban ghi', 'dem ban ghi'])):
         config['metrics'].append({'operation': 'rows', 'alias': 'Rows'})
         mark(*m.span())
-    if not config['metrics'] and numeric_keys:
+    if not config['metrics'] and numeric_keys and not employee_detail:
         for key in sorted(numeric_keys):
             col = column(key)
             if col:
@@ -443,11 +455,17 @@ def _plan_one(text, name, df):
         errors.append(f'Chưa hiểu đầy đủ điều kiện: {rest}.')
     if errors:
         return _result('unsupported', unsupported=errors)
-    if not config['metrics']:
+    if employee_detail and (config['metrics'] or ranking):
+        questions.append('Danh sách chi tiết không tính tổng hay xếp hạng; hãy tách yêu cầu tổng hợp riêng.')
+    if not config['metrics'] and not employee_detail:
         questions.append('Bạn muốn tính tổng, trung bình hay đếm chỉ tiêu nào?')
     if questions:
         return _result('clarify', questions=list(dict.fromkeys(questions)))
     config['group_by'] = list(dict.fromkeys(config['group_by']))
+    if employee_detail:
+        return _result('ready', source=name, config=config,
+                       explanation=[f'Nguồn: {name}', 'Danh sách nhân viên chi tiết (không tổng hợp).',
+                                    f"Điều kiện: {len(config['filters'])}."])
     return _result('ready', source=name, config=config,
                    explanation=[f'Nguồn: {name}', 'Chỉ tiêu: ' + ', '.join(f"{m['operation']}({m.get('column', '*')}) → {m['alias']}" for m in config['metrics']),
                                 f"Nhóm: {', '.join(config['group_by']) or 'toàn bộ'}; điều kiện: {len(config['filters'])}."])

@@ -48,6 +48,7 @@ def render_pending_report(call_api, add_message):
                 add_message('assistant', '**Báo cáo đã được tính theo kế hoạch xác nhận.**', {
                     'output_path': result['output_path'], 'project': pending['project'],
                     'summary': result.get('summary', []), 'warnings': result.get('warnings', []),
+                    'detail_preview': result.get('detail_preview', []), 'total_rows': result.get('total_rows'),
                 })
                 st.session_state.pending_report = None
                 st.rerun()
