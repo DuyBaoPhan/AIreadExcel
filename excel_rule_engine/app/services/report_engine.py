@@ -15,7 +15,7 @@ import json
 import math
 import re
 import pandas as pd
-from pandas.api.types import is_bool_dtype, is_datetime64_any_dtype, is_complex_dtype
+from pandas.api.types import is_bool_dtype, is_datetime64_any_dtype, is_complex_dtype, is_integer_dtype
 
 MAX_ROWS = 100_000
 MAX_COLUMNS = 200
@@ -199,6 +199,42 @@ def _filtered(df, config):
     return df.loc[mask].copy(deep=True)
 
 
+def _safe_sum(values, column=None):
+    """Sum without fixed-width wraparound or nonfinite report/export results.
+
+    Integers are accumulated exactly before enforcing Excel's 15-digit numeric
+    precision limit. Null-only groups retain the existing min_count=1 behavior.
+    """
+    present = values.dropna()
+    if present.empty:
+        return float('nan')
+    message = (f"SUM for column {column if column is not None else values.name!r} exceeds the supported numeric range; "
+               "rescale the values or filter the data (Excel supports 15 significant digits)")
+    if is_integer_dtype(values.dtype):
+        total = sum(int(value) for value in present)
+        _require(abs(total) <= 999_999_999_999_999, message)
+        return total
+    try:
+        total = math.fsum(present)
+    except (OverflowError, ValueError) as exc:
+        raise ValueError(message) from exc
+    _require(math.isfinite(total), message)
+    return total
+
+
+def _safe_mean(values):
+    """Scale before reduction so finite means cannot overflow an intermediate sum."""
+    present = values.dropna()
+    if present.empty:
+        return float('nan')
+    scale = max(abs(float(value)) for value in present)
+    if scale == 0:
+        return 0.0
+    result = (math.fsum(float(value) / scale for value in present) / len(present)) * scale
+    _require(math.isfinite(result), 'MEAN exceeds supported numeric range')
+    return result
+
+
 def _aggregate(df, groups, metrics):
     _cols(groups, df.columns, 'group_by')
     estimated_rows = len(df[groups].drop_duplicates()) if groups else 1
@@ -225,11 +261,13 @@ def _aggregate(df, groups, metrics):
                 work = df[groups].copy()
                 work[temporary] = values
                 target = work.groupby(groups, dropna=False, observed=True, sort=False)[temporary]
-                series = target.sum(min_count=1) if op == 'sum' else getattr(target, op)()
+                series = (target.agg(lambda group: _safe_sum(group, m['column'])) if op == 'sum' else
+                          target.agg(_safe_mean) if op == 'mean' else getattr(target, op)())
             series = series.rename(alias)
             result = series.to_frame() if result is None else result.join(series)
         else:
-            value = len(df) if op == 'rows' else values.sum(min_count=1) if op == 'sum' else getattr(values, op)()
+            value = (len(df) if op == 'rows' else _safe_sum(values) if op == 'sum' else
+                     _safe_mean(values) if op == 'mean' else getattr(values, op)())
             if result is None:
                 result = pd.DataFrame(index=[0])
             result[alias] = [value]

@@ -12,13 +12,13 @@ import unicodedata
 import pandas as pd
 
 SCHEMA_ALIASES = {
-    'revenue': ('doanh thu', 'revenue', 'sales', 'thanh tien'),
+    'revenue': ('doanh so', 'doanh thu', 'revenue', 'sales', 'thanh tien'),
     'profit': ('loi nhuan', 'profit'),
     'cost': ('chi phi', 'cost', 'expense', 'expenses'),
     'quantity': ('so luong', 'quantity', 'qty'),
-    'salary': ('luong', 'salary', 'payroll', 'tien luong'),
+    'salary': ('quy luong', 'luong', 'salary', 'payroll', 'tien luong'),
     'product': ('san pham', 'product', 'product name', 'ten san pham'),
-    'department': ('phong ban', 'department', 'phong'),
+    'department': ('bo phan', 'phong ban', 'department', 'phong'),
     'region': ('khu vuc', 'region', 'vung', 'mien'),
     'status': ('trang thai', 'status'),
     'employee_name': ('ten nhan vien', 'ho ten', 'ho va ten', 'employee name', 'employee_name', 'name'),
@@ -69,13 +69,24 @@ def _plan_one(text, name, df):
         return cols[0]
 
     # Only explicit single-source reports are supported.
+    forbidden_text = re.sub(r'\b(lon hon|nho hon) hoac bang\b', r'\1 bang', text)
     for p in ('xoa', 'delete', 'remove', 'du bao', 'forecast', 'so sanh', 'tang truong', 'chenh lech', 'ket hop', 'ghep',
               'join', 'khong', 'ngoai tru', 'loai tru', 'khong tinh', 'khong bao gom', 'tru don', 'hoac'):
-        if re.search(_pattern([p]), text):
+        if re.search(_pattern([p]), forbidden_text):
             return _result('unsupported', unsupported=[f'Chưa hỗ trợ điều kiện: {p}.'])
 
+    # Expand only explicit coordinated grouping terms; unknown dimensions remain.
+    dimension_terms = _pattern(tuple(a for k in DIMENSIONS for a in SCHEMA_ALIASES[k]) + ('thang', 'quy', 'nam'))
+    text = re.sub(r'\btheo\s+tung\s+', 'theo ', text)
+    group_clause = r'\btheo\s+' + dimension_terms + r'(?:(?:\s+va\s+|\s*,\s*)(?:tung\s+)?' + dimension_terms + r')+'
+    def expand_group(match):
+        return re.sub(r'(?:\s+va\s+|\s*,\s*)(?:tung\s+)?', ' theo ', match.group())
+    text = re.sub(group_clause, expand_group, text)
+    used = [False] * len(text)
     for m in matches(_pattern([name])):
-        mark(*m.span())
+        marker = re.search(r'\b(?:file|tep|nguon|du lieu)\s*$', text[:m.start()])
+        if '.' in name or marker:
+            mark(marker.start() if marker else m.start(), m.end())
     # Explicit grouping: consume known dimensions only; unknown "theo" remains.
     group_pattern = r'\btheo\s+(' + '|'.join(re.escape(normalize(a)) for k in DIMENSIONS for a in sorted(SCHEMA_ALIASES[k], key=len, reverse=True)) + r'|thang|quy|nam)\b'
     for m in matches(group_pattern):
@@ -97,12 +108,60 @@ def _plan_one(text, name, df):
             if col:
                 config['group_by'].append(col)
 
+    # Absolute quarters and date ranges become inclusive row filters. They are
+    # parsed before single months/years so their scope cannot be discarded.
+    quarter_pattern = r'\bquy\s+(iv|iii|ii|i|[1-9])(?:\s*(?:/|-|nam)\s*(\d{4}))?\b'
+    range_pattern = r'\btu\s+(?:ngay\s+)?(\d{1,2}/\d{1,2}/\d{4})\s+den\s+(?:ngay\s+)?(\d{1,2}/\d{1,2}/\d{4})\b'
+    special_dates = [m for m in matches(range_pattern) + matches(quarter_pattern)
+                     if not any(used[m.start():m.end()])]
+    if len(special_dates) > 1:
+        errors.append('Chỉ hỗ trợ một khoảng thời gian.')
+    for m in special_dates:
+        col = column('date')
+        mark(*m.span())
+        try:
+            if re.match(range_pattern, m.group()):
+                lo_date = pd.to_datetime(m.group(1), format='%d/%m/%Y')
+                hi_date = pd.to_datetime(m.group(2), format='%d/%m/%Y')
+            else:
+                q = {'i': 1, 'ii': 2, 'iii': 3, 'iv': 4}.get(m.group(1))
+                q = q or int(m.group(1))
+                if not 1 <= q <= 4:
+                    raise ValueError('quarter')
+                year = int(m.group(2)) if m.group(2) else None
+                if col and year is None:
+                    from app.services.report_engine import _convert
+                    years = _convert(df[col], 'date').dropna().dt.year.unique()
+                    if len(years) == 1:
+                        year = int(years[0])
+                    else:
+                        questions.append('Bạn muốn quý này của năm nào?')
+                if not year:
+                    continue
+                lo_date = pd.Timestamp(year, q * 3 - 2, 1)
+                hi_date = pd.Timestamp(year, q * 3, calendar.monthrange(year, q * 3)[1])
+            if lo_date > hi_date:
+                raise ValueError('reversed date interval')
+            if col:
+                vals = df[col].dropna().astype(str)
+                ym = not vals.empty and vals.str.fullmatch(r'\d{4}-\d{2}').all()
+                if ym and re.match(range_pattern, m.group()) and (
+                        lo_date.day != 1 or hi_date.day != calendar.monthrange(hi_date.year, hi_date.month)[1]):
+                    questions.append('Nguồn chỉ có dữ liệu theo tháng; không thể lọc chính xác khoảng ngày lẻ. Hãy chọn trọn tháng hoặc dùng nguồn có ngày chi tiết.')
+                    continue
+                config['filters'].append({'column': col, 'operator': 'between',
+                    'value': [lo_date.strftime('%Y-%m' if ym else '%Y-%m-%d'),
+                              hi_date.strftime('%Y-%m' if ym else '%Y-%m-%d') + ('' if ym else ' 23:59:59.999999999')],
+                    'type': 'text' if ym else 'date'})
+        except (ValueError, OverflowError):
+            errors.append('Quý hoặc khoảng ngày không hợp lệ.')
+
     # Dates: calendar month requires a year unless a single data year is certain.
     date_pattern = r'\bthang\s+(\d{1,2})(?:\s*(?:/|-|nam)\s*(\d{4}))?\b|\bnam\s+(\d{4})\b|\b(20\d{2}|19\d{2})\b'
     date_matches = [m for m in matches(date_pattern) if not any(used[m.start():m.end()])]
     if date_matches:
         col = column('date')
-        if len(date_matches) > 1:
+        if len(date_matches) > 1 or special_dates:
             errors.append('Chưa hỗ trợ nhiều khoảng thời gian trong một yêu cầu.')
         for m in date_matches:
             mark(*m.span())
@@ -134,15 +193,34 @@ def _plan_one(text, name, df):
                 hi = f'{year:04d}-{month or 12:02d}-{calendar.monthrange(year, month or 12)[1]:02d} 23:59:59.999999999'
             config['filters'].append({'column': col, 'operator': 'between', 'value': [lo, hi], 'type': 'text' if ym else 'date'})
 
+    # A threshold on an aggregate is HAVING, not a row filter. The engine's
+    # supported row filters must never silently stand in for aggregate scope.
+    threshold = r'(?:>=|<=|>|<|=|tren|duoi|lon hon|nho hon|it nhat|toi da|toi thieu|bang)'
+    if re.search(r'\b(?:tong|trung binh|binh quan|sum|mean|average)\s+' +
+                 _pattern(tuple(a for k in METRIC_NAMES for a in SCHEMA_ALIASES[k])) +
+                 r'\s*' + threshold + r'\s*\d', text):
+        return _result('clarify', questions=['Bạn muốn lọc theo giá trị tổng hợp hay từng dòng? Hãy chỉ rõ điều kiện lọc từng dòng.'])
+
+    for key in METRIC_NAMES:
+        metric_term = _pattern(SCHEMA_ALIASES[key])
+        for condition in matches(metric_term + r'\s*' + threshold + r'\s*\d'):
+            before = text[:condition.start()]
+            if config['group_by'] and re.search(r'\btheo\b', before) and re.search(metric_term, before):
+                return _result('clarify', questions=['Điều kiện này áp dụng cho từng dòng hay cho kết quả sau khi nhóm?'])
+
     numeric_keys = set()
     # Numeric conditions are bound to explicitly mentioned metric columns.
-    number = r'(\d+(?:[.,]\d+)?)\s*(ty|trieu|nghin|million|billion)?'
+    number = r'(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)\s*(ty|trieu|nghin|ngan|million|billion)?(?![\w.,]\d)'
     def amount(value, unit):
-        return float(value.replace(',', '.')) * {'ty': 1e9, 'billion': 1e9, 'trieu': 1e6, 'million': 1e6, 'nghin': 1e3, None: 1}[unit]
+        if re.fullmatch(r'\d{1,3}(?:\.\d{3})+(?:,\d+)?', value):
+            value = value.replace('.', '')
+        return float(value.replace(',', '.')) * {'ty': 1e9, 'billion': 1e9, 'trieu': 1e6, 'million': 1e6, 'nghin': 1e3, 'ngan': 1e3, None: 1}[unit]
     for key in METRIC_NAMES:
         term = _pattern(SCHEMA_ALIASES[key])
         between = term + r'\s+tu\s+' + number + r'\s+den\s+' + number
         for m in matches(between):
+            if any(used[m.start():m.end()]):
+                continue
             numeric_keys.add(key)
             col = column(key)
             lo = amount(m.group(1), m.group(2) or m.group(4))
@@ -152,26 +230,39 @@ def _plan_one(text, name, df):
             if col:
                 config['filters'].append({'column': col, 'operator': 'between', 'value': [lo, hi], 'type': 'number'})
             mark(*m.span())
-        comparison = term + r'\s*(>=|<=|>|<|=|tren|duoi|lon hon|nho hon|it nhat|toi da|bang)\s*' + number
+        comparison = term + r'\s*(>=|<=|>|<|=|lon hon hoac bang|nho hon hoac bang|lon hon|nho hon|tren|duoi|it nhat|toi thieu|toi da|bang)\s*' + number
         for m in matches(comparison):
             if any(used[m.start():m.end()]):
                 continue
             numeric_keys.add(key)
             col = column(key)
-            op = {'>=': 'ge', '<=': 'le', '>': 'gt', '<': 'lt', '=': 'eq', 'tren': 'gt', 'duoi': 'lt', 'lon hon': 'gt', 'nho hon': 'lt', 'it nhat': 'ge', 'toi da': 'le', 'bang': 'eq'}[m.group(1)]
+            op = {'>=': 'ge', '<=': 'le', '>': 'gt', '<': 'lt', '=': 'eq', 'tren': 'gt', 'duoi': 'lt', 'lon hon': 'gt', 'nho hon': 'lt', 'it nhat': 'ge', 'toi thieu': 'ge', 'toi da': 'le', 'lon hon hoac bang': 'ge', 'nho hon hoac bang': 'le', 'bang': 'eq'}[m.group(1)]
             if col:
                 config['filters'].append({'column': col, 'operator': op, 'value': amount(m.group(2), m.group(3)), 'type': 'number'})
             mark(*m.span())
 
     # Match data values (including unquoted values), longest first. Keep originals.
     candidates = []
+    reserved_values = {'cao nhat', 'thap nhat', 'lon nhat', 'nho nhat', 'it nhat',
+                       'toi da', 'toi thieu', 'gia tri', 'tong cong', 'trung binh',
+                       'binh quan', 'vui long', 'nhan vien', 'don hang', 'nhan su',
+                       'hay', 'lam on', 'giup toi', 'giup minh', 'cho toi', 'cho minh',
+                       'cho biet', 'ban hay', 'toi muon', 'toi can', 'xem', 'nhe',
+                       'tinh', 'xuat', 'lap', 'tao', 'la', 'co', 'trong', 'vao', 'voi',
+                       'du lieu', 'file', 'tep', 'tu file'}
+    reserved_values.update(normalize(a) for aliases in SCHEMA_ALIASES.values() for a in aliases)
     for key in DIMENSIONS:
         for col in schema[key]:
             for value in df[col].dropna().unique():
-                if isinstance(value, str) and normalize(value) and normalize(value) not in {'tong', 'trung binh', 'binh quan', 'dem', 'top', 'bao cao', 'sum', 'mean', 'average', 'count', 'theo', 'nam', 'thang', 'quy', 'va', 'hoac', 'cua', 'cho'}:
+                if isinstance(value, str) and normalize(value) and (normalize(value) not in reserved_values or (key == 'department' and normalize(value) == 'nhan su')) and normalize(value) not in {'tong', 'trung binh', 'binh quan', 'dem', 'top', 'bao cao', 'sum', 'mean', 'average', 'count', 'theo', 'nam', 'thang', 'quy', 'va', 'hoac', 'cua', 'cho'}:
                     candidates.append((normalize(value), col, value))
     for value, col, original in sorted(candidates, key=lambda item: len(item[0]), reverse=True):
         for m in matches(_pattern([value])):
+            if value == 'nhan su' and any(
+                phrase.start() <= m.start() and m.end() <= phrase.end()
+                for phrase in matches(_pattern(['so luong nhan su', 'dem nhan su', 'bao nhieu nhan su']))
+            ):
+                continue
             if any(used[m.start():m.end()]):
                 continue
             collisions = {(c, str(v)) for nv, c, v in candidates if nv == value}
@@ -182,18 +273,28 @@ def _plan_one(text, name, df):
 
     # Metric phrases, not merely a domain keyword, establish an aggregation.
     average = bool(re.search(r'\b(trung binh|binh quan|average|mean)\b', text))
-    identity_spans = [m.span() for m in matches(_pattern(['so luong nhan vien', 'so nhan vien', 'dem nhan vien', 'bao nhieu nhan vien', 'so don hang', 'dem don hang', 'bao nhieu don hang']))]
+    scalar_ops = []
+    for m in matches(r'\b(?:gia tri\s+)?(lon nhat|nho nhat|toi da|toi thieu|min|max|minimum|maximum)\s+(?:cua\s+)?(' + _pattern(tuple(a for k in METRIC_NAMES for a in SCHEMA_ALIASES[k])) + r')'):
+        scalar_ops.append((m, 'min' if m.group(1) in ('nho nhat', 'toi thieu', 'min', 'minimum') else 'max'))
+    explicit_scalar = scalar_ops[0][1] if len(scalar_ops) == 1 else None
+    if scalar_ops and average:
+        questions.append('Giá trị nhỏ nhất/lớn nhất và trung bình có phạm vi tính khác nhau; hãy làm rõ.')
+    if len(scalar_ops) > 1:
+        questions.append('Hãy chỉ rõ từng phép tổng hợp nhỏ nhất/lớn nhất riêng biệt.')
+    identity_spans = [m.span() for m in matches(_pattern(['so luong nhan vien', 'so nhan vien', 'dem nhan vien', 'dem so nhan vien', 'tong so nhan vien', 'so luong nhan su', 'bao nhieu nhan vien', 'so don hang', 'dem don hang', 'bao nhieu don hang']))]
     for key, alias in METRIC_NAMES.items():
         found = [m for m in matches(_pattern(SCHEMA_ALIASES[key])) if not any(used[m.start():m.end()]) and not any(a <= m.start() and m.end() <= b for a, b in identity_spans)]
         if found:
             col = column(key)
             if col:
-                op = 'mean' if average else 'sum'
-                config['metrics'].append({'column': col, 'operation': op, 'alias': alias + ('Mean' if average else 'Sum')})
+                op = explicit_scalar or ('mean' if average else 'sum')
+                config['metrics'].append({'column': col, 'operation': op, 'alias': alias + op.title()})
             for m in found:
                 mark(*m.span())
+    for m, _ in scalar_ops:
+        mark(*m.span())
     for key, phrases, alias in (
-        ('employee_id', ('so nhan vien', 'so luong nhan vien', 'dem nhan vien', 'bao nhieu nhan vien'), 'Employees'),
+        ('employee_id', ('so nhan vien', 'so luong nhan vien', 'dem nhan vien', 'dem so nhan vien', 'tong so nhan vien', 'so luong nhan su', 'bao nhieu nhan vien'), 'Employees'),
         ('order_id', ('so don hang', 'dem don hang', 'bao nhieu don hang'), 'Orders'),
     ):
         for m in matches(_pattern(phrases)):
@@ -210,8 +311,8 @@ def _plan_one(text, name, df):
         for key in sorted(numeric_keys):
             col = column(key)
             if col:
-                op = 'mean' if average else 'sum'
-                config['metrics'].append({'column': col, 'operation': op, 'alias': METRIC_NAMES[key] + ('Mean' if average else 'Sum')})
+                op = explicit_scalar or ('mean' if average else 'sum')
+                config['metrics'].append({'column': col, 'operation': op, 'alias': METRIC_NAMES[key] + op.title()})
     # Explicit count of non-null metric cells is distinct from rows/nunique.
     if re.search(r'\bdem\b(?!\s+(?:dong|ban ghi|nhan vien|don hang)\b)', text) and config['metrics']:
         for metric in config['metrics']:
@@ -258,11 +359,13 @@ def _plan_one(text, name, df):
                 if df[identity].isna().any():
                     questions.append('Mã nhân viên bị thiếu; cần xác định danh tính trước khi xếp hạng.')
                 config['group_by'].append(identity)
+                if df[identity].duplicated().any() and not re.search(r'\b(tong|trung binh|binh quan|sum|mean|average)\b', text):
+                    questions.append('Một nhân viên có nhiều dòng; hãy chỉ rõ tính tổng hay trung bình lương trước khi xếp hạng.')
             if names:
                 display = column('employee_name')
                 if display and identity:
                     if df.groupby(identity)[display].nunique().gt(1).any():
-                        questions.append('One employee ID has multiple names; clarify identity before ranking.')
+                        questions.append('Một mã nhân viên có nhiều tên; hãy làm rõ danh tính trước khi xếp hạng.')
                     # Null display names must not drop an otherwise identified person.
                     if not df[display].isna().any():
                         config['group_by'].append(display)
@@ -276,6 +379,9 @@ def _plan_one(text, name, df):
             questions.append('Cần cột mã hoặc tên nhân viên để xếp hạng từng người.')
         for m in employees:
             mark(*m.span())
+
+    if ranking and config.get('date_group') and any(g != config['date_group']['alias'] for g in config['group_by']):
+        questions.append('Bạn muốn xếp hạng chung mọi kỳ hay xếp hạng riêng trong từng kỳ?')
 
     if ranking:
         n = int(tops[0].group(1)) if tops else 1
@@ -297,17 +403,30 @@ def _plan_one(text, name, df):
             for m in matches(r'\bnao\b'):
                 mark(*m.span())
 
+    # Multiple operations on the same metric must not silently collapse to one.
+    has_sum_op = bool(re.search(r'\b(?:tong|sum)\b', text))
+    has_mean_op = bool(re.search(r'\b(?:trung binh|binh quan|average|mean)\b', text))
+    has_count_op = bool(re.search(r'\bdem\b(?!\s+(?:dong|ban ghi|nhan vien|so nhan vien|don hang)\b)', text))
+    if config['metrics'] and sum((has_sum_op, has_mean_op, has_count_op)) > 1:
+        questions.append('Có nhiều phép tính cho chỉ tiêu; hãy tách yêu cầu hoặc cấu hình từng phép tính trong Báo cáo nâng cao.')
+
     # Multiple metrics with differently scoped operators require clarification.
     metric_columns = {m.get('column') for m in config['metrics'] if m.get('column')}
+    if scalar_ops and len(metric_columns) > 1:
+        questions.append('Phép tính nhỏ nhất/lớn nhất phải chỉ rõ một chỉ tiêu duy nhất.')
     if len(metric_columns) > 1:
         has_sum = bool(re.search(r'\b(tong|sum)\b', text))
         has_mean = bool(re.search(r'\b(trung binh|binh quan|average|mean)\b', text))
         has_count = bool(re.search(r'\bdem\b', text))
-        if sum((has_sum, has_mean, has_count)) > 1:
+        scoped_operator = re.search(r'\b(trung binh|binh quan|average|mean|dem|tong|sum)\b', text)
+        preceding_metric = scoped_operator and any(
+            m.start() < scoped_operator.start() for m in matches(
+                _pattern(tuple(a for k in METRIC_NAMES for a in SCHEMA_ALIASES[k]))))
+        if sum((has_sum, has_mean, has_count)) > 1 or preceding_metric:
             questions.append('Có nhiều chỉ tiêu với phép tính khác nhau. Hãy tách yêu cầu hoặc cấu hình từng chỉ tiêu trong Báo cáo nâng cao.')
 
     # Consume narrowly defined grammar, never unknown constraints or qualifiers.
-    boilerplate = ('vui long', 'lam on', 'giup toi', 'cho toi', 'hay', 'toi muon', 'bao cao', 'thong ke',
+    boilerplate = ('vui long', 'lam on', 'giup toi', 'giup minh', 'cho toi', 'cho minh', 'cho biet', 'ban hay', 'hay', 'toi muon', 'toi can', 'xem', 'nhe', 'bao cao', 'thong ke',
                    'tinh', 'xuat', 'lap', 'tao', 'tong cong', 'tong', 'trung binh', 'binh quan', 'dem',
                    'la bao nhieu', 'bao nhieu', 'la', 'cua', 'cho', 'co', 'trong', 'vao', 'va', 'voi',
                    'du lieu', 'file', 'tep', 'tu file')
@@ -319,7 +438,7 @@ def _plan_one(text, name, df):
     rest = re.sub(r'[\s,;:.!?"\'()]+', ' ', rest).strip()
     literal_columns = [f['column'] for f in config['filters'] if f['operator'] == 'eq' and f['type'] == 'text']
     if len(literal_columns) != len(set(literal_columns)):
-        errors.append('Ch?a h? tr? nhi?u gi? tr? tr?n c?ng m?t c?t; c?n l?m r? logic l?c.')
+        errors.append('Chưa hỗ trợ nhiều giá trị trên cùng một cột; cần làm rõ logic lọc.')
     if rest:
         errors.append(f'Chưa hiểu đầy đủ điều kiện: {rest}.')
     if errors:
@@ -346,7 +465,22 @@ def plan_report(text: str, sources: dict[str, pd.DataFrame]) -> dict:
     if not sources:
         return _result('clarify', questions=['Chưa có nguồn dữ liệu; hãy chọn hoặc tải tệp Excel.'])
     normalized = normalize(text)
-    explicit = [name for name in sources if re.search(_pattern([name]), normalized)]
+    normalized = re.sub(r'\bca nam(?=\s+\d{4}\b)', 'nam', normalized)
+    # A short source label may also be a data literal or metric alias. Require
+    # an explicit source marker rather than consuming it as a filename.
+    for name, frame in sources.items():
+        if '.' in name or not isinstance(frame, pd.DataFrame) or not frame.columns.is_unique:
+            continue
+        for match in re.finditer(_pattern([name]), normalized):
+            if re.search(r'\b(?:file|tep|nguon|du lieu)\s*$', normalized[:match.start()]):
+                continue
+            dimension_cols = [c for c in frame.columns if isinstance(c, str) and any(
+                normalize(c) in {normalize(a) for a in SCHEMA_ALIASES[k]} for k in DIMENSIONS)]
+            if any(frame[c].dropna().map(lambda v: normalize(v) == normalize(name)).any() for c in dimension_cols):
+                return _result('clarify', questions=['Tên nguồn trùng với giá trị dữ liệu. Hãy ghi rõ file/nguồn hoặc giá trị cần lọc.'])
+    explicit = [name for name in sources if any(
+        '.' in name or re.search(r'\b(?:file|tep|nguon|du lieu)\s*$', normalized[:m.start()])
+        for m in re.finditer(_pattern([name]), normalized))]
     if len(explicit) > 1:
         return _result('unsupported', unsupported=['Chưa hỗ trợ kết hợp nhiều nguồn trong một báo cáo.'])
     names = explicit or list(sources)

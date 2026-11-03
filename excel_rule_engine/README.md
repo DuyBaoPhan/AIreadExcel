@@ -273,3 +273,15 @@ Chưa hỗ trợ qua câu tự nhiên: dự báo, nối nhiều nguồn, so sán
 Xác nhận gắn với dấu kiểm tra SHA-256 của yêu cầu, nguồn và cấu hình. Dữ liệu thay đổi cần xem/xác nhận lại; đây là kiểm tra tính nhất quán, **không phải đăng nhập hoặc phân quyền**. Tối đa 20 nguồn/40 MB tổng; chatbot đọc sheet đầu, muốn chọn sheet khác dùng công cụ upload báo cáo. Không có bản ghi phù hợp hoặc không có bằng chứng số liệu thì không tạo báo cáo bằng 0 giả. Kết quả bảng được hiển thị trong hội thoại và xuất Excel có cấu hình.
 
 Kiểm thử toàn bộ (bao gồm tập câu tiếng Việt): cài `pip install -r requirements-dev.txt` từ gốc, chạy `python -m pytest`. Không thêm pytest vào phụ thuộc chạy Cloud.
+
+
+## Kiểm thử ngôn ngữ tự nhiên diện rộng
+
+Bộ kiểm thử cố định có 596 trường hợp (572 câu khác nhau), gồm câu có dấu/không dấu, phép tổng/trung bình/đếm/min/max, nhóm nhiều chiều, xếp hạng, lọc số và thời gian, nguồn mơ hồ và điều kiện chưa hỗ trợ. Kết quả kỳ vọng được viết độc lập và đối chiếu số liệu, không chỉ kiểm tra trạng thái “đã hiểu”.
+
+- Kết quả và giới hạn: `../docs/nlp_campaign_results.md`.
+- Lỗi ban đầu và từng câu: `../docs/nlp_benchmark_baseline.json`; so sánh cùng bộ mở rộng: `../docs/nlp_benchmark_expanded_before.json`, `../docs/nlp_benchmark_current.json`.
+- Chạy từ thư mục gốc repository: `excel_rule_engine\venv\Scripts\python.exe -m pytest -q`.
+- Xuất nhật ký từng câu: `excel_rule_engine\venv\Scripts\python.exe excel_rule_engine/tests/test_nlp_benchmark.py --audit docs/nlp_benchmark_current.json`. Chế độ audit luôn lưu cả lỗi và trả mã 0; pytest mới là cổng kiểm tra bắt buộc.
+
+Đây là phạm vi đã kiểm thử, không phải cam kết hiểu mọi câu tiếng Việt. Trường hợp phạm vi tính toán mơ hồ sẽ hỏi lại, không tự bỏ điều kiện hoặc chuyển sang gộp file. Khởi động lại cả backend sau khi cập nhật mã nguồn.

@@ -1,11 +1,10 @@
 ﻿"""Recognize analytical requests without confusing report plans with legacy actions."""
 import re
-import unicodedata
+from app.core.report_planner import normalize
 
 
 def is_analytical_request(text: str) -> bool:
-    value = ''.join(c for c in unicodedata.normalize('NFD', text.lower().replace('đ', 'd'))
-                    if unicodedata.category(c) != 'Mn')
+    value = normalize(text)
     if re.search(r'\b(xoa|delete|remove)\b', value):
         return False  # Preserve destructive-command safeguards.
     # Generic legacy export remains explicit; specialized requests cannot fall back.
@@ -14,4 +13,4 @@ def is_analytical_request(text: str) -> bool:
         return False
     return bool(re.search(
         r'\b(doanh thu|doanh so|loi nhuan|chi phi|revenue|profit|cost|top|trung binh|'
-        r'bao cao|luong|salary|payroll|highest|lowest|largest|smallest|tong luong|quy luong|dem|bao nhieu|theo thang|theo quy|theo nam)\b', value))
+        r'min|max|minimum|maximum|gia tri lon nhat|gia tri nho nhat|bao cao|so luong|quantity|nhan vien|nhan su|don hang|luong|salary|payroll|highest|lowest|largest|smallest|tong luong|quy luong|dem|bao nhieu|theo thang|theo quy|theo nam)\b', value))
