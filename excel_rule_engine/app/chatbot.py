@@ -154,6 +154,18 @@ def process_command(user_text: str):
     st.session_state.pending_report = None
     add_message("user", user_text)
 
+    from app.core.analytical_request import is_analytical_request
+    if is_analytical_request(user_text):
+        with st.spinner("Đang phân tích nguồn và yêu cầu..."):
+            plan = call_api("/api/report/preview", {
+                "text": user_text, "project": st.session_state.project,
+            })
+        if not plan or plan.get("error"):
+            add_message("assistant", "Không thể mở bộ phân tích báo cáo. Backend có thể chưa cập nhật; hãy khởi động lại backend/ứng dụng. Không chạy thay bằng gộp file.\n\n" + str((plan or {}).get("error", "Không có phản hồi.")))
+        else:
+            _handle_requires_input({"type": "report_plan", "text": user_text,
+                                    "project": st.session_state.project, **plan}, {}, {})
+        return
     with st.spinner("Đang xử lý..."):
         response = call_api("/api/command", {
             "text": user_text,

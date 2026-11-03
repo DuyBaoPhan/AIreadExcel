@@ -80,7 +80,7 @@ def list_excel_files(
 
     files = [
         f for f in sorted(folder_path.iterdir())
-        if f.is_file() and f.suffix.lower() in exts
+        if f.is_file() and f.suffix.lower() in exts and not f.name.startswith("~$")
     ]
     logger.info("Tìm thấy %d file Excel trong %s", len(files), folder_path)
     return files
