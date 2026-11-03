@@ -12,6 +12,8 @@ from typing import Any
 import requests
 import streamlit as st
 
+from app.services.download_service import EXCEL_MIME, fetch_output_file
+
 # ──────────────────────────────────────────────────────────────
 #  Config
 # ──────────────────────────────────────────────────────────────
@@ -77,7 +79,7 @@ def add_message(role: str, content: str, metadata: dict | None = None):
     })
 
 
-def render_message(msg: dict):
+def render_message(msg: dict, message_index: int = 0):
     role = msg["role"]
     content = msg["content"]
     meta = msg.get("metadata", {})
@@ -93,7 +95,11 @@ def render_message(msg: dict):
                     st.json(meta["parsed"])
 
         if meta.get("output_path"):
-            _render_download_button(meta["output_path"])
+            _render_download_button(
+                meta["output_path"],
+                project=meta.get("project", st.session_state.project),
+                key=f"chat_download_{message_index}",
+            )
 
         if meta.get("file_list"):
             _render_file_list(meta["file_list"])
@@ -103,11 +109,26 @@ def render_message(msg: dict):
                 st.warning(w)
 
 
-def _render_download_button(output_path: str):
+@st.cache_data(ttl=60, max_entries=32, show_spinner=False)
+def _load_download_data(project: str, filename: str) -> bytes:
+    return fetch_output_file(API_BASE, project, filename)
+
+
+def _render_download_button(output_path: str, project: str | None = None, key: str | None = None):
     filename = Path(output_path).name
-    project = st.session_state.project
-    download_url = f"{API_BASE}/api/download/{project}/{filename}"
-    st.markdown(f"📥 [Tải xuống **{filename}**]({download_url})")
+    project = project or st.session_state.project
+    try:
+        data = _load_download_data(project, filename)
+    except requests.RequestException:
+        st.warning(f"Kh\u00f4ng th\u1ec3 t\u1ea3i file {filename}. File c\u00f3 th\u1ec3 \u0111\u00e3 b\u1ecb x\u00f3a sau khi kh\u1edfi \u0111\u1ed9ng l\u1ea1i server; h\u00e3y t\u1ea1o l\u1ea1i k\u1ebft qu\u1ea3 ho\u1eb7c th\u1eed l\u1ea1i.")
+        return
+    st.download_button(
+        label=f"T\u1ea3i xu\u1ed1ng {filename}",
+        data=data,
+        file_name=filename,
+        mime=EXCEL_MIME,
+        key=key,
+    )
 
 
 def _render_file_list(files: list[dict]):
@@ -152,6 +173,7 @@ def process_command(user_text: str):
         "intent_display": intent_display,
         "workflow_display": workflow_display,
         "parsed": parsed,
+        "project": st.session_state.project,
     }
 
     # ── Error ──
@@ -256,6 +278,7 @@ def _handle_success_result(intent: str, result: dict, meta: dict):
 
     if output_path:
         meta["output_path"] = output_path
+        meta["project"] = st.session_state.project
 
     add_message("assistant", msg, {**meta, "warnings": warnings})
 
@@ -330,8 +353,10 @@ with st.sidebar:
         for f in output_files:
             fname = f.get("name", "")
             project_name = st.session_state.project
-            dl_url = f"{API_BASE}/api/download/{project_name}/{fname}"
-            st.markdown(f"[📥 {fname}]({dl_url}) ({f.get('size')})")
+            _render_download_button(
+                fname, project=project_name, key=f"sidebar_download_{project_name}_{fname}",
+            )
+            st.caption(f.get("size", ""))
     else:
         st.info("Chưa có file output.")
 
@@ -384,8 +409,8 @@ for i, cmd in enumerate(quick_commands):
 st.divider()
 
 # Hiển thị lịch sử chat
-for msg in st.session_state.messages:
-    render_message(msg)
+for message_index, msg in enumerate(st.session_state.messages):
+    render_message(msg, message_index)
 
 # Chat input
 if prompt := st.chat_input("Nhập câu lệnh bằng tiếng Việt..."):
