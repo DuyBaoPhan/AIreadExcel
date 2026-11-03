@@ -1,0 +1,12 @@
+﻿{
+  "version": 1,
+  "filters": [{"column":"salary","operator":"ge","value":10000000,"type":"number"}],
+  "filter_logic": "and",
+  "group_by": ["department"],
+  "metrics": [
+    {"column":"employee_id","operation":"nunique","alias":"Employees"},
+    {"column":"salary","operation":"sum","alias":"Payroll"},
+    {"column":"salary","operation":"mean","alias":"AverageSalary"}
+  ],
+  "top_n": {"column":"Payroll","n":10,"ascending":false}
+}

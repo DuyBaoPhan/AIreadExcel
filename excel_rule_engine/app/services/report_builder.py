@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile, BadZipFile
 
 import numpy as np
 import pandas as pd
@@ -29,6 +30,15 @@ def _upload_type(filename: str, data: bytes) -> str:
     extension = Path(filename).suffix.lower()
     if extension not in {".xlsx", ".csv"}:
         raise ValueError("Unsupported file type. Choose .xlsx or .csv.")
+    if extension == ".xlsx":
+        try:
+            with ZipFile(BytesIO(data)) as archive:
+                if len(archive.infolist()) > 10_000 or sum(
+                    entry.file_size for entry in archive.infolist()
+                ) > 200 * 1024 * 1024:
+                    raise ValueError("Excel workbook expands beyond the safe 200 MB limit.")
+        except BadZipFile as exc:
+            raise ValueError("Unable to open the Excel workbook.") from exc
     return extension
 
 
@@ -82,8 +92,8 @@ def _validate_frame(df: pd.DataFrame) -> None:
         raise ValueError("The selected table is empty.")
     if len(df) > MAX_ROWS:
         raise ValueError("The table exceeds the 100,000 row limit.")
-    if len(df.columns) > 16384:
-        raise ValueError("The table exceeds Excel's column limit.")
+    if len(df.columns) > 200:
+        raise ValueError("The table exceeds the 200 column report limit.")
     if not df.columns.is_unique:
         raise ValueError("Column names must be unique for explicit mapping.")
 

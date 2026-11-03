@@ -1,0 +1,4 @@
+﻿{
+  "version":1,
+  "pivot":{"index":["department"],"columns":"status","values":"salary","operation":"sum"}
+}

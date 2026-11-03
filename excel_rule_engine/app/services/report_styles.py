@@ -1,4 +1,4 @@
-﻿"""Reusable presentation helpers for Excel reports; values remain unchanged."""
+"""Reusable presentation helpers for Excel reports; values remain unchanged."""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -50,6 +50,14 @@ def title_band(ws: Any, title: str, subtitle: str, width: int = 8) -> None:
 
 def write_table(ws: Any, df: pd.DataFrame, name: str, start_row: int = 1) -> None:
     """Write a filterable, striped table with type-aware formats and safe text."""
+    if df.size > 1_000_000:
+        raise ValueError("Excel export exceeds the 1,000,000 cell limit; filter or aggregate first.")
+    for value in list(df.columns):
+        if len(str(value).encode('utf-16-le')) // 2 > 32767:
+            raise ValueError("Excel column header exceeds 32,767 characters.")
+    for column in df.columns:
+        if df[column].map(lambda value: isinstance(value, str) and len(value.encode('utf-16-le')) // 2 > 32767).any():
+            raise ValueError("Excel cell text exceeds 32,767 characters; shorten source values.")
     if not len(df.columns):
         ws.cell(start_row, 1, "Không có cột dữ liệu")
         return

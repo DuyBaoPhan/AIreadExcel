@@ -216,3 +216,24 @@ Trên giao diện Streamlit, mở mục **Tạo báo cáo từ file của bạn*
 Báo cáo chỉ sử dụng sheet đã chọn, không trộn với file demo. Dữ liệu được xử lý trong bộ nhớ và không ghi vào thư mục input/output dùng chung. File upload không được tự thêm vào nguồn của chatbot. Tải file về trước khi đóng hoặc khởi động lại ứng dụng; đây không phải kho lưu trữ bền vững.
 
 Mỗi dòng là một bản ghi, không tự loại trùng hay suy luận mã nhân viên. Người dùng phải chọn đúng cột tiền; không chọn mã định danh hoặc cộng các loại tiền tệ khác nhau. Ô tiền trống không được suy đoán; kiểm tra cảnh báo chất lượng trước khi sử dụng số liệu.
+
+## Báo cáo nâng cao không cần LLM
+
+Mục **Báo cáo nâng cao** dùng bộ tính toán xác định, không gửi dữ liệu sang AI/API bên ngoài. Mỗi lần làm việc hỗ trợ một nguồn chính và một nguồn phụ để nối, chọn sheet và dòng tiêu đề riêng. Dữ liệu nằm trong phiên Streamlit; đây không phải hệ thống đăng nhập hay kho lưu trữ bền vững.
+
+### Khả năng
+- Lọc nhiều điều kiện AND/OR: bằng/khác, so sánh số/ngày, chứa văn bản (không regex), danh sách, khoảng, ô trống.
+- Kiểu lọc được chọn rõ: text/number/date. Văn bản so sánh phân biệt hoa thường. Chuỗi ngày dùng ngày/tháng/năm; giá trị không chuyển kiểu được sẽ báo lỗi, không tự loại bỏ.
+- Nhóm theo nhiều cột và ngày/tháng/quý/năm. Chỉ tiêu: tổng, trung bình, min/max, đếm dòng, đếm giá trị không trống, đếm duy nhất (không tính null).
+- Pivot và top/bottom N; pivot là chế độ riêng, không kết hợp chỉ tiêu nhóm hoặc so sánh kỳ trong cùng cấu hình.
+- So sánh hai khoảng thời gian không giao nhau: giá trị hiện tại, kỳ trước, chênh lệch và % thay đổi. Không có nhóm ở một kỳ giữ null, không tự suy luận bằng 0; kỳ trước bằng 0 không tính phần trăm. Cận thời gian bao gồm hai đầu; khi nhập ngày cuối phải dùng hết ngày nếu dữ liệu có giờ.
+- Nối trái/trong/ngoài bằng khóa rõ ràng và kiểm tra quan hệ 1–1, nhiều–1 hoặc 1–nhiều. Không hỗ trợ nhiều–nhiều; từ chối khóa null và khóa trùng vi phạm quan hệ. Nối 1–nhiều có thể lặp giá trị từ bảng trái: phải chọn đúng chỉ tiêu trước khi cộng.
+- Tải/lấy lại cấu hình JSON phiên bản 1. Cấu hình chỉ chứa phép toán cho phép, không có Python, SQL hay eval. Cấu hình không kèm dữ liệu nguồn hoặc cấu hình nối; chọn lại nguồn/khóa khi chạy lại.
+- Excel gồm Report, Summary, Data, Quality và Configuration. Trang Report là trích tối đa 15 dòng; Summary chứa toàn bộ kết quả. Top N tác động vào bảng tổng hợp nếu có, nếu không thì vào dữ liệu chi tiết.
+
+### Giới hạn và tính đúng
+Tối đa mỗi file 20 MB, workbook giải nén 200 MB, 100.000 dòng, 200 cột; bảng tổng hợp tối đa 1 triệu ô; cấu hình 100 KiB. Không tự đoán cột tiền, đơn vị tiền tệ, công thức nghiệp vụ hay loại trùng. Excel công thức được đọc theo giá trị cache có sẵn, không được tính lại; hãy tính/lưu workbook trong Excel trước khi upload. CSV phải là UTF-8, dấu phân cách phẩy. Chưa hỗ trợ biểu thức tùy ý, PDF, lập lịch, dữ liệu ngoài hoặc mọi yêu cầu ngôn ngữ tự nhiên.
+
+Cấu hình mẫu ở `examples/hr_report.json`, `examples/payroll_pivot.json`, `examples/period_comparison.json`; thay tên cột và khoảng ngày theo nguồn thực tế. Mẫu so sánh dùng ngày bắt đầu làm việc chỉ để minh họa kỹ thuật, không phải so sánh quỹ lương tháng thực tế.
+
+Giới hạn xuất Excel có định dạng: tổng Data + Summary tối đa 1.000.000 ô. Ô chữ/tiêu đề dài hơn giới hạn Excel 32.767 ký tự UTF-16 sẽ bị từ chối, không cắt ngầm. Sheet Configuration lưu JSON thành các đoạn; ghép các ô theo thứ tự, không thêm dấu phân cách, để khôi phục JSON. Nút tải cấu hình JSON là cách dùng lại cấu hình trực tiếp.

@@ -14,6 +14,7 @@ import streamlit as st
 
 from app.services.download_service import EXCEL_MIME, fetch_output_file
 from app.report_wizard import render_report_wizard
+from app.advanced_report_wizard import render_advanced_report_wizard
 
 # ──────────────────────────────────────────────────────────────
 #  Config
@@ -391,6 +392,7 @@ except Exception:
 st.divider()
 
 render_report_wizard()
+render_advanced_report_wizard()
 
 st.divider()
 
