@@ -10,7 +10,7 @@ from streamlit.testing.v1 import AppTest
 class TestReportWizard(unittest.TestCase):
     def test_no_upload_does_not_require_api(self):
         app = AppTest.from_string(
-            'from app.report_wizard import render_report_wizard\nrender_report_wizard()'
+            'from app.ui.report_wizard import render_report_wizard\nrender_report_wizard()'
         ).run(timeout=20)
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(len(app.get('file_uploader')), 1)
@@ -18,12 +18,12 @@ class TestReportWizard(unittest.TestCase):
     def test_invalid_upload_shows_error(self):
         script = '''
 from unittest.mock import patch
-from app.report_wizard import render_report_wizard
+from app.ui.report_wizard import render_report_wizard
 class Uploaded:
     name = 'broken.xlsx'
     def getvalue(self):
         return b'not-an-excel-file'
-with patch('app.report_wizard.st.file_uploader', return_value=Uploaded()):
+with patch('app.ui.report_wizard.st.file_uploader', return_value=Uploaded()):
     render_report_wizard()
 '''
         app = AppTest.from_string(script).run(timeout=20)
@@ -35,12 +35,12 @@ with patch('app.report_wizard.st.file_uploader', return_value=Uploaded()):
         script = '''
 import streamlit as st
 from unittest.mock import patch
-from app.report_wizard import render_report_wizard
+from app.ui.report_wizard import render_report_wizard
 class Uploaded:
     name = 'employees.csv'
     def getvalue(self):
         return b'department,salary\\nIT,100\\nHR,200\\n'
-with patch('app.report_wizard.st.file_uploader', return_value=Uploaded()):
+with patch('app.ui.report_wizard.st.file_uploader', return_value=Uploaded()):
     render_report_wizard()
 '''
         app = AppTest.from_string(script).run(timeout=20)

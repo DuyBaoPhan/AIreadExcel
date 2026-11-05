@@ -6,8 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
-from app.services import conversation_reporting as service
-from app.services.planner_settings import planner_mode
+from app.services.reports import conversation_reporting as service
+from app.services.ai.planner_settings import planner_mode
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ def plan():
 
 def test_auto_uses_ai_without_rule_parser_and_exports(workspace):
     source, output = workspace
-    with patch('app.services.openai_planner.plan_with_openai', return_value=plan()) as ai, \
+    with patch('app.services.ai.openai_planner.plan_with_openai', return_value=plan()) as ai, \
          patch.object(service, 'plan_report', side_effect=AssertionError('no keyword planner')):
         response = service.automatic_request(source, 'demo', 'cho minh xem cac ban dang lam')
     assert response['status'] == 'ready'
@@ -42,7 +42,7 @@ def test_auto_uses_ai_without_rule_parser_and_exports(workspace):
 
 def test_manual_confirmation_reuses_approved_config_without_second_api(workspace):
     source, output = workspace
-    with patch('app.services.openai_planner.plan_with_openai', return_value=plan()) as ai:
+    with patch('app.services.ai.openai_planner.plan_with_openai', return_value=plan()) as ai:
         preview = service.preview_request(source, 'show staff')
         assert not list(output.iterdir())
         result = service.execute_request(source, 'demo', 'show staff', 'staff.csv', preview['fingerprint'])
@@ -52,7 +52,7 @@ def test_manual_confirmation_reuses_approved_config_without_second_api(workspace
 
 def test_changed_data_rejects_approval(workspace):
     source, output = workspace
-    with patch('app.services.openai_planner.plan_with_openai', return_value=plan()):
+    with patch('app.services.ai.openai_planner.plan_with_openai', return_value=plan()):
         preview = service.preview_request(source, 'show staff')
     (source / 'staff.csv').write_text('name,salary\nZ,999\n')
     with pytest.raises(ValueError, match='thay doi'):
@@ -62,7 +62,7 @@ def test_changed_data_rejects_approval(workspace):
 
 def test_api_error_never_falls_back(workspace):
     source, output = workspace
-    with patch('app.services.openai_planner.plan_with_openai', side_effect=ValueError('API unavailable')), \
+    with patch('app.services.ai.openai_planner.plan_with_openai', side_effect=ValueError('API unavailable')), \
          patch.object(service, 'plan_report', side_effect=AssertionError('no fallback')):
         with pytest.raises(ValueError, match='API unavailable'):
             service.automatic_request(source, 'demo', 'show staff')
@@ -70,7 +70,7 @@ def test_api_error_never_falls_back(workspace):
 
 
 def test_ai_ui_does_not_require_keyword():
-    path = Path(__file__).resolve().parents[1] / 'app/chatbot.py'
+    path = Path(__file__).resolve().parents[1] / 'app/ui/chatbot.py'
     node = next(n for n in ast.parse(path.read_text(encoding='utf-8')).body if isinstance(n, ast.FunctionDef) and n.name == 'process_command')
     state = {'ai_planner_enabled': True, 'auto_reports': True}
     class State:
@@ -100,7 +100,7 @@ def test_legacy_api_ai_branch_never_calls_keyword_parser(workspace):
     response = {'status': 'ready', 'result': {'source_file': 'staff.csv', 'total_rows': 2}}
     with patch.object(main, 'ensure_session'), patch.object(main, 'create_task', return_value=7), \
          patch.object(main, 'update_task_status'), patch.object(main, 'parse_command', side_effect=AssertionError('keyword parser')), \
-         patch('app.services.chat_conversation.chat', return_value=response['result']):
+         patch('app.services.chat.chat_conversation.chat', return_value=response['result']):
         outcome = asyncio.run(main.handle_command(main.CommandRequest(text='ai kiem nhieu nhat', project='demo')))
     assert outcome.result['total_rows'] == 2
     assert outcome.error is None

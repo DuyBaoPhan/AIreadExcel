@@ -8,8 +8,8 @@ import pytest
 from openpyxl import load_workbook
 
 from app.core.report_planner import plan_report
-from app.services import conversation_reporting as service
-from app.services.report_engine import run_report
+from app.services.reports import conversation_reporting as service
+from app.services.reports.report_engine import run_report
 
 
 @pytest.fixture

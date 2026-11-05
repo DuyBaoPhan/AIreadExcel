@@ -16,9 +16,10 @@ from pathlib import Path
 PROJECT_DIR = Path(__file__).resolve().parent
 os.chdir(PROJECT_DIR)
 sys.path.insert(0, str(PROJECT_DIR))
+sys.path.insert(0, str(PROJECT_DIR.parent))
 
 
-from app.services.environment import load_environment
+from app.services.runtime.environment import load_environment
 load_environment()
 
 
@@ -40,7 +41,7 @@ def main():
     with socket.socket() as probe:
         occupied = probe.connect_ex(("127.0.0.1", 8000)) == 0
     if occupied:
-        from app.services.backend_capabilities import check_report_api
+        from app.services.runtime.backend_capabilities import check_report_api
         compatible, diagnostic = check_report_api()
         print("[!] Port 8000 dang duoc su dung. " + ("Backend da chay." if compatible else diagnostic))
         print("Dung phien cu bang Ctrl+C trong terminal cua no, sau do chay lai. Khong tu tat tien trinh khac.")
@@ -54,16 +55,16 @@ def main():
     sample_marker = PROJECT_DIR / "projects" / "demo_project" / "input" / "Employees_IT.xlsx"
     if not sample_marker.exists():
         print("[*] Dang tao du lieu Excel mau...")
-        import tests.create_sample_data as sample_gen
+        import scripts.create_sample_data as sample_gen
         sample_gen.OUTPUT_DIR = sample_marker.parent
         sample_gen.create_employees_it()
-        sample_gen.create_employees_hr()
+        sample_gen.create_employees_business()
+        sample_gen.create_employees_operations()
         sample_gen.create_sales_data()
-        sample_gen.create_root_file()
-        sample_gen.create_update_file()
+        sample_gen.create_root_and_update_files()
 
     # 3. Khởi động Streamlit Chatbot (chạy nền)
-    chatbot_script = PROJECT_DIR / "app" / "chatbot.py"
+    chatbot_script = PROJECT_DIR / "app" / "ui" / "chatbot.py"
     streamlit_cmd = [
         sys.executable, "-m", "streamlit", "run",
         str(chatbot_script),

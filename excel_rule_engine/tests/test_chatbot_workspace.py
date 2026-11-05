@@ -15,7 +15,7 @@ response.content = b'example'
 with patch('requests.get', return_value=response):
     path = Path(%r)
     exec(compile(path.read_text(encoding='utf-8'), str(path), 'exec'), globals())
-''' % str(Path(__file__).resolve().parents[1] / 'app' / 'chatbot.py')
+''' % str(Path(__file__).resolve().parents[1] / 'app' / 'ui' / 'chatbot.py')
 
 
 class TestChatbotWorkspace(unittest.TestCase):

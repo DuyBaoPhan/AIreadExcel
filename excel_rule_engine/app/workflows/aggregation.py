@@ -11,9 +11,9 @@ from typing import Any
 import pandas as pd
 from rapidfuzz import fuzz
 
-from app.services.excel_reader import read_excel
-from app.services.excel_writer import write_excel, generate_timestamped_name
-from app.services.file_manager import list_excel_files, safe_output_path
+from app.services.excel.excel_reader import read_excel
+from app.services.excel.excel_writer import write_excel, generate_timestamped_name
+from app.services.sources.file_manager import list_excel_files, safe_output_path
 
 logger = logging.getLogger(__name__)
 

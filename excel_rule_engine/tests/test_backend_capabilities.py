@@ -2,7 +2,7 @@
 from unittest.mock import Mock, patch
 import requests
 import pytest
-from app.services.backend_capabilities import check_report_api
+from app.services.runtime.backend_capabilities import check_report_api
 
 
 @pytest.mark.parametrize('paths,compatible', [
@@ -13,7 +13,7 @@ from app.services.backend_capabilities import check_report_api
 def test_openapi_checks_both_post_routes(paths, compatible):
     response = Mock()
     response.json.return_value = {'paths': paths}
-    with patch('app.services.backend_capabilities.requests.get', return_value=response) as get:
+    with patch('app.services.runtime.backend_capabilities.requests.get', return_value=response) as get:
         ok, message = check_report_api()
     assert ok is compatible
     assert bool(message) is not compatible
@@ -21,7 +21,7 @@ def test_openapi_checks_both_post_routes(paths, compatible):
 
 
 def test_unavailable_backend_has_actionable_diagnostic():
-    with patch('app.services.backend_capabilities.requests.get', side_effect=requests.ConnectionError('offline')):
+    with patch('app.services.runtime.backend_capabilities.requests.get', side_effect=requests.ConnectionError('offline')):
         ok, message = check_report_api()
     assert not ok
     assert 'offline' in message
@@ -36,7 +36,7 @@ def test_current_fastapi_declares_required_routes():
 def test_invalid_openapi_paths_are_incompatible():
     response = Mock()
     response.json.return_value = {'paths': []}
-    with patch('app.services.backend_capabilities.requests.get', return_value=response):
+    with patch('app.services.runtime.backend_capabilities.requests.get', return_value=response):
         assert check_report_api()[0] is False
 
 
@@ -51,7 +51,7 @@ def test_launcher_does_not_start_ui_on_occupied_api_port():
     try:
         spec.loader.exec_module(launcher)
         with patch('socket.socket') as socket, patch('subprocess.Popen') as start, \
-             patch('app.services.backend_capabilities.check_report_api', return_value=(False, 'missing preview')):
+             patch('app.services.runtime.backend_capabilities.check_report_api', return_value=(False, 'missing preview')):
             socket.return_value.__enter__.return_value.connect_ex.return_value = 0
             launcher.main()
         start.assert_not_called()
@@ -71,7 +71,7 @@ def test_cloud_bootstrap_stops_on_healthy_incompatible_backend():
     namespace = {'subprocess': SimpleNamespace(Popen=Mock())}
     exec(compile(ast.Module(body=[node], type_ignores=[]), '<bootstrap>', 'exec'), namespace)
     with patch('requests.get', return_value=response), \
-         patch('app.services.backend_capabilities.check_report_api', return_value=(False, 'missing report API')), \
+         patch('app.services.runtime.backend_capabilities.check_report_api', return_value=(False, 'missing report API')), \
          patch.dict('sys.modules', {'streamlit': streamlit}), pytest.raises(StopBootstrap):
         namespace['start_fastapi']()
     streamlit.error.assert_called_once()

@@ -1,6 +1,8 @@
 ﻿"""All provider prompts require Vietnamese without corrupting machine identifiers."""
 import pytest
-from app.services import chat_agent, openai_planner, rag_answer
+from app.services.ai import chat_agent
+from app.services.ai import openai_planner
+from app.services.ai import rag_answer
 
 
 @pytest.mark.parametrize('module',[chat_agent,openai_planner,rag_answer])

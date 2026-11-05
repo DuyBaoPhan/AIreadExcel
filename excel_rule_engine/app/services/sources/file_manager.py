@@ -5,6 +5,8 @@ Giới hạn truy cập chỉ trong thư mục project để đảm bảo an to�
 
 from __future__ import annotations
 
+from app.paths import PROJECTS_DIR
+
 import logging
 import os
 from pathlib import Path
@@ -28,7 +30,7 @@ def set_projects_root(root: str | Path) -> None:
 def get_projects_root() -> Path:
     if _PROJECTS_ROOT is None:
         # Default: thư mục 'projects' nằm cùng cấp với app/
-        default = Path(__file__).resolve().parents[2] / "projects"
+        default = PROJECTS_DIR
         default.mkdir(parents=True, exist_ok=True)
         return default
     return _PROJECTS_ROOT

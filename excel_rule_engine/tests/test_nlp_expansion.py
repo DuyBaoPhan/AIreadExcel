@@ -4,7 +4,7 @@ import pytest
 
 from app.core.analytical_request import is_analytical_request
 from app.core.report_planner import plan_report
-from app.services.report_engine import run_report
+from app.services.reports.report_engine import run_report
 
 
 @pytest.fixture

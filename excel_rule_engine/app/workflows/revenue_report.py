@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.services.excel_reader import read_excel
-from app.services.file_manager import list_excel_files, safe_output_path
-from app.services.excel_writer import generate_timestamped_name
-from app.services.report_engine import run_report
-from app.services.advanced_report_export import build_advanced_report_bytes
+from app.services.excel.excel_reader import read_excel
+from app.services.sources.file_manager import list_excel_files, safe_output_path
+from app.services.excel.excel_writer import generate_timestamped_name
+from app.services.reports.report_engine import run_report
+from app.services.reports.advanced_report_export import build_advanced_report_bytes
 
 
 def normalize(value):

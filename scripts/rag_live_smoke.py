@@ -4,8 +4,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from app.services.rag_index import search
+sys.path.insert(0,str((Path(__file__).resolve().parents[1] / "excel_rule_engine")))
+from app.services.ai.rag_index import search
 
 
 def main():

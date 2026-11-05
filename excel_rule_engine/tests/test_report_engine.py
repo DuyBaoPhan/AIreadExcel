@@ -4,7 +4,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import unittest
 import pandas as pd
 from pandas.testing import assert_frame_equal
-from app.services.report_engine import run_report, serialize_config, load_config, join_sources
+from app.services.reports.report_engine import run_report, serialize_config, load_config, join_sources
 
 
 class ReportEngineTests(unittest.TestCase):

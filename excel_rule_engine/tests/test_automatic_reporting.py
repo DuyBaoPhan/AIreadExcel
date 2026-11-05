@@ -9,7 +9,7 @@ import pytest
 from fastapi import HTTPException
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.services import conversation_reporting as service
+from app.services.reports import conversation_reporting as service
 from app.main import app, automatic_conversation_report, ReportPlanRequest
 
 
@@ -120,7 +120,7 @@ def test_auto_route_contract_and_no_generic_fallback(workspace):
          patch('app.main.run_export_report', side_effect=AssertionError('generic fallback')):
         response = asyncio.run(automatic_conversation_report(ReportPlanRequest(text='doanh thu theo san pham')))
     assert response['status'] == 'ready'
-    with patch('app.services.conversation_reporting.automatic_request', side_effect=ValueError('bad data')):
+    with patch('app.services.reports.conversation_reporting.automatic_request', side_effect=ValueError('bad data')):
         with pytest.raises(HTTPException) as error:
             asyncio.run(automatic_conversation_report(ReportPlanRequest(text='bad')))
     assert error.value.status_code == 400

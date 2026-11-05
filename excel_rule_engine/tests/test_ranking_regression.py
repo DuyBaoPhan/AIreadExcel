@@ -3,7 +3,7 @@ import unittest
 import tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.services.file_manager import list_excel_files
+from app.services.sources.file_manager import list_excel_files
 from app.core.analytical_request import is_analytical_request
 from app.core.report_planner import plan_report
 import pandas as pd
@@ -15,7 +15,7 @@ class TestRankingRegression(unittest.TestCase):
         frame = pd.DataFrame({'product':['A','A','B','C','D'], 'revenue':[10,20,50,40,1]})
         plan = plan_report(text, {'sales.xlsx':frame})
         self.assertEqual(plan['status'],'ready',plan)
-        from app.services.report_engine import run_report
+        from app.services.reports.report_engine import run_report
         result = run_report(frame,plan['config'])
         self.assertEqual(result['summary']['product'].tolist(),['B','C','A'])
 
@@ -32,7 +32,7 @@ class TestChatRoutingRegression(unittest.TestCase):
         from contextlib import nullcontext
         from types import SimpleNamespace
         from unittest.mock import Mock
-        path = Path(__file__).resolve().parents[1] / 'app' / 'chatbot.py'
+        path = Path(__file__).resolve().parents[1] / 'app' / 'ui' / 'chatbot.py'
         tree = ast.parse(path.read_text(encoding='utf-8'))
         function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'process_command')
         api = Mock(return_value=response)

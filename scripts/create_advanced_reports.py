@@ -2,14 +2,14 @@
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str((Path(__file__).resolve().parents[1] / "excel_rule_engine")))
 import pandas as pd
-from app.services.report_engine import run_report, load_config
-from app.services.advanced_report_export import build_advanced_report_bytes
+from app.services.reports.report_engine import run_report, load_config
+from app.services.reports.advanced_report_export import build_advanced_report_bytes
 
 
 def main():
-    base = Path(__file__).resolve().parents[1]
+    base = (Path(__file__).resolve().parents[1] / "excel_rule_engine")
     source = pd.DataFrame({
         'employee_id': ['E1', 'E2', 'E3', 'E4', 'E5'],
         'department': ['IT', 'IT', 'HR', 'HR', 'Sales'],

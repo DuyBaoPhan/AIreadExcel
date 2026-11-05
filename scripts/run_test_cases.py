@@ -1,6 +1,6 @@
 """
 Script chạy tất cả test cases theo yêu cầu đề bài.
-Chạy: python tests/run_test_cases.py
+Chạy: python scripts/run_test_cases.py
 Không cần FastAPI server chạy — test trực tiếp các module.
 """
 
@@ -10,7 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str((Path(__file__).resolve().parents[1] / "excel_rule_engine")))
 
 import pandas as pd
 
@@ -90,7 +90,7 @@ def main():
     from app.workflows.aggregation import run_aggregation
     from app.workflows.filtering import run_filter
     from app.workflows.comparison import run_comparison
-    from app.services.file_manager import set_projects_root, list_excel_files
+    from app.services.sources.file_manager import set_projects_root, list_excel_files
 
     # Setup temp environment
     tmpdir = Path(tempfile.mkdtemp())

@@ -39,7 +39,7 @@ if errorlevel 1 (
 REM Tạo dữ liệu mẫu nếu chưa có
 if not exist "projects\demo_project\input\Employees_IT.xlsx" (
     echo [INFO] Tao du lieu mau...
-    python tests\create_sample_data.py
+    python ..\scripts\create_sample_data.py
 )
 
 REM Khởi tạo DB
@@ -52,7 +52,7 @@ start "FastAPI Server" cmd /k "call venv\Scripts\activate.bat && uvicorn app.mai
 timeout /t 3 /nobreak >nul
 
 echo [INFO] Khoi dong Streamlit chatbot...
-start "Streamlit Chatbot" cmd /k "call venv\Scripts\activate.bat && streamlit run app\chatbot.py --server.port 8501"
+start "Streamlit Chatbot" cmd /k "call venv\Scripts\activate.bat && streamlit run app\ui\chatbot.py --server.port 8501"
 
 echo.
 echo ========================================

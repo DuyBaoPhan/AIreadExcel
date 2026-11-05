@@ -8,10 +8,10 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from app.services.download_service import EXCEL_MIME
-from app.services.report_builder import inspect_sheets, read_uploaded_table
-from app.services.report_engine import join_sources, load_config, run_report, serialize_config
-from app.services.advanced_report_export import build_advanced_report_bytes
+from app.services.runtime.download_service import EXCEL_MIME
+from app.services.reports.report_builder import inspect_sheets, read_uploaded_table
+from app.services.reports.report_engine import join_sources, load_config, run_report, serialize_config
+from app.services.reports.advanced_report_export import build_advanced_report_bytes
 
 _RESULT_KEY = "advanced_report_result"
 

@@ -142,7 +142,7 @@ def _plan_one(text, name, df):
                     raise ValueError('quarter')
                 year = int(m.group(2)) if m.group(2) else None
                 if col and year is None:
-                    from app.services.report_engine import _convert
+                    from app.services.reports.report_engine import _convert
                     years = _convert(df[col], 'date').dropna().dt.year.unique()
                     if len(years) == 1:
                         year = int(years[0])
@@ -183,7 +183,7 @@ def _plan_one(text, name, df):
         if col and not year:
             vals = df[col].dropna().astype(str)
             try:
-                from app.services.report_engine import _convert
+                from app.services.reports.report_engine import _convert
                 parsed_dates = _convert(df[col], 'date')
                 years = set(parsed_dates.dropna().dt.year.astype(str))
             except ValueError:
@@ -577,7 +577,7 @@ def _source_candidates(text, sources):
     except (ValueError, OverflowError):
         interval = None
     if interval and interval[0] <= interval[1]:
-        from app.services.report_engine import _convert
+        from app.services.reports.report_engine import _convert
         covered = []
         for name in names:
             cols = schemas[name].get('date', [])

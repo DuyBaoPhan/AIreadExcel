@@ -15,7 +15,7 @@ from openpyxl import Workbook
 from openpyxl.chart import BarChart, Reference
 from openpyxl.styles import Alignment, Font
 
-from app.services.report_styles import NAVY, prepare_sheet, title_band, write_table
+from app.services.reports.report_styles import NAVY, prepare_sheet, title_band, write_table
 from app.workflows.report_export import _write_data_sheet, _write_stats_sheet
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024

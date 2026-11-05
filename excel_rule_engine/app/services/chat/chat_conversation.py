@@ -5,9 +5,9 @@ from time import monotonic
 from uuid import uuid4
 import json
 from pathlib import Path
-from app.services import conversation_reporting as reports
-from app.services.chat_agent import route_turn
-from app.services.column_metadata import describe_column
+from app.services.reports import conversation_reporting as reports
+from app.services.ai.chat_agent import route_turn
+from app.services.sources.column_metadata import describe_column
 
 _SESSIONS=OrderedDict()
 _LOCK=RLock()
@@ -62,14 +62,14 @@ def _chat(input_dir,project,text,session_id):
                 response['result']=result
                 response['reply']=f"Nguon: {result['source_file']}. {result['total_rows']} dong phu hop. Ket qua duoc Python tinh toan."
     elif turn['action']=='retrieve':
-        from app.services.rag_index import search
-        from app.services.rag_answer import answer_from_evidence
+        from app.services.ai.rag_index import search
+        from app.services.ai.rag_answer import answer_from_evidence
         retrieval = search(input_dir, turn['request'], top_k=10)
         answer = answer_from_evidence(turn['request'], retrieval)
         response.update(answer)
         response['retrieval'] = {k: retrieval.get(k) for k in ('fingerprint', 'total_documents', 'truncated')}
     elif turn['action']=='update':
-        from app.services.source_updates import propose_update
+        from app.services.sources.source_updates import propose_update
         u=turn['update']
         try:
             proposal=propose_update(input_dir,u['source'],u['key_column'],u['key_value'],u['column'],u['value'])
@@ -95,7 +95,7 @@ def confirm(input_dir,session_id,token):
         if (not state or state['root']!=str(Path(input_dir).resolve()) or
                 not isinstance(token,str) or state['pending']!=token or monotonic()-state['time']>3600):
             raise ValueError('De xuat khong con hieu luc trong phien nay.')
-        from app.services.source_updates import confirm_update
+        from app.services.sources.source_updates import confirm_update
         try:
             result=confirm_update(input_dir,token)
         except OSError:

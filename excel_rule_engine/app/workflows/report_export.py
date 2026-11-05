@@ -14,13 +14,13 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.chart import BarChart, Reference
 from openpyxl.formatting.rule import CellIsRule
-from app.services.report_styles import (
+from app.services.reports.report_styles import (
     NAVY, TEAL, LIGHT, prepare_sheet, title_band, write_table,
 )
 
-from app.services.excel_reader import read_excel
-from app.services.excel_writer import generate_timestamped_name
-from app.services.file_manager import list_excel_files, safe_output_path
+from app.services.excel.excel_reader import read_excel
+from app.services.excel.excel_writer import generate_timestamped_name
+from app.services.sources.file_manager import list_excel_files, safe_output_path
 
 logger = logging.getLogger(__name__)
 

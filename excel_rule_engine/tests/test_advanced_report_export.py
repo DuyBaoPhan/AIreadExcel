@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pandas as pd
 from openpyxl import load_workbook
-from app.services.advanced_report_export import build_advanced_report_bytes
+from app.services.reports.advanced_report_export import build_advanced_report_bytes
 
 
 class TestAdvancedReportExport(unittest.TestCase):

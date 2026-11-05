@@ -16,11 +16,11 @@ import sys
 from pathlib import Path
 
 # Thêm project root vào sys.path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str((Path(__file__).resolve().parents[1] / "excel_rule_engine")))
 
 import pandas as pd
 
-OUTPUT_DIR = Path(__file__).resolve().parents[1] / "projects" / "demo_project" / "input"
+OUTPUT_DIR = (Path(__file__).resolve().parents[1] / "excel_rule_engine") / "projects" / "demo_project" / "input"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 

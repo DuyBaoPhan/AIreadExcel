@@ -1,4 +1,4 @@
-﻿from app.services.chat_history import save_current,switch_chat
+﻿from app.services.chat.chat_history import save_current,switch_chat
 
 
 def test_switch_restores_messages_and_context_not_approvals():

@@ -15,7 +15,7 @@ def command_harness(response, automatic=True):
         pending_report = None
         def get(self, key, default=None):
             return automatic if key == 'auto_reports' else default
-    path = Path(__file__).resolve().parents[1] / 'app' / 'chatbot.py'
+    path = Path(__file__).resolve().parents[1] / 'app' / 'ui' / 'chatbot.py'
     node = next(n for n in ast.parse(path.read_text(encoding='utf-8')).body if isinstance(n, ast.FunctionDef) and n.name == 'process_command')
     namespace = {'st': SimpleNamespace(session_state=State(), spinner=lambda *a: nullcontext()),
                  'call_api': Mock(return_value=response), 'add_message': Mock(),
@@ -56,7 +56,7 @@ def test_old_backend_404_does_not_fall_back():
 
 SCRIPT = '''
 import streamlit as st
-from app.report_plan_ui import render_pending_report
+from app.ui.report_plan_ui import render_pending_report
 st.session_state.auto_reports = True
 if 'pending_report' not in st.session_state:
     st.session_state.pending_report = {'status':'clarify', 'text':'salary', 'project':'demo',

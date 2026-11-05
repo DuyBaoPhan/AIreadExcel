@@ -258,7 +258,7 @@ class TestAggregationWorkflow(unittest.TestCase):
         df2.to_excel(self.input_dir / "file2.xlsx", index=False)
 
         # Patch file_manager để trỏ vào tmpdir
-        import app.services.file_manager as fm
+        import app.services.sources.file_manager as fm
         fm.set_projects_root(self.tmpdir)
 
     def test_aggregation_merges_files(self):
@@ -297,7 +297,7 @@ class TestFilterWorkflow(unittest.TestCase):
         })
         df.to_excel(self.input_dir / "employees.xlsx", index=False)
 
-        import app.services.file_manager as fm
+        import app.services.sources.file_manager as fm
         fm.set_projects_root(self.tmpdir)
 
     def test_filter_salary_gt(self):
@@ -372,7 +372,7 @@ class TestComparisonWorkflow(unittest.TestCase):
         })
         df_update.to_excel(self.input_dir / "Update_Data.xlsx", index=False)
 
-        import app.services.file_manager as fm
+        import app.services.sources.file_manager as fm
         fm.set_projects_root(self.tmpdir)
 
     def test_comparison_detects_added(self):
@@ -444,7 +444,7 @@ class TestSafetyRules(unittest.TestCase):
 
     def test_path_traversal_blocked(self):
         """Path traversal phải bị chặn."""
-        from app.services.file_manager import _safe_resolve
+        from app.services.sources.file_manager import _safe_resolve
         import tempfile
         tmpdir = Path(tempfile.mkdtemp())
         with self.assertRaises(ValueError):

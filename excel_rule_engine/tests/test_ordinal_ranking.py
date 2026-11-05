@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from app.core.report_planner import plan_report
-from app.services.report_engine import MAX_ROWS, load_config, run_report, serialize_config
+from app.services.reports.report_engine import MAX_ROWS, load_config, run_report, serialize_config
 
 
 @pytest.fixture
@@ -115,7 +115,7 @@ def test_export_preserves_ordinal_config_and_evidence(frame):
     from io import BytesIO
     import json
     from openpyxl import load_workbook
-    from app.services.advanced_report_export import build_advanced_report_bytes
+    from app.services.reports.advanced_report_export import build_advanced_report_bytes
 
     plan = plan_report('san pham co doanh thu cao thu 2', {'sales.xlsx': frame})
     result = run_report(frame, plan['config'])

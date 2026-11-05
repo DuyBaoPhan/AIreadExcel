@@ -2,7 +2,7 @@
 import json
 import os
 import requests
-from app.services.openai_planner import _object, _nullable, _STRING, _SCALAR, _matches
+from app.services.ai.openai_planner import _object, _nullable, _STRING, _SCALAR, _matches
 
 _SCHEMA = _object({'action': {'type':'string','enum':['chat','query','retrieve','export','update','clarify']},
     'reply': _STRING, 'request': _STRING,

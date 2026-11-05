@@ -1,22 +1,30 @@
 """
 Streamlit Chatbot Interface - Giao diện hội thoại cho Excel Rule Engine.
-Chạy: streamlit run app/chatbot.py
+Chạy: streamlit run app/ui/chatbot.py
 """
 
 from __future__ import annotations
 
 import uuid
+import sys
 from pathlib import Path
 from typing import Any
+
+# Streamlit can execute this file directly without adding the engine to sys.path.
+# Cloud executes it with its own __file__, so keep the existing Cloud bootstrap.
+if __name__ == "__main__" and "PROJECT_DIR" not in globals():
+    engine_dir = Path(__file__).resolve().parents[2]
+    if str(engine_dir) not in sys.path:
+        sys.path.insert(0, str(engine_dir))
 
 import requests
 import streamlit as st
 
-from app.services.download_service import EXCEL_MIME, fetch_output_file
-from app.report_wizard import render_report_wizard
-from app.advanced_report_wizard import render_advanced_report_wizard
-from app.report_plan_ui import render_pending_report
-from app.ui_theme import inject_theme, render_hero, render_empty_chat, render_section_intro, render_sidebar_brand
+from app.services.runtime.download_service import EXCEL_MIME, fetch_output_file
+from app.ui.report_wizard import render_report_wizard
+from app.ui.advanced_report_wizard import render_advanced_report_wizard
+from app.ui.report_plan_ui import render_pending_report
+from app.ui.ui_theme import inject_theme, render_hero, render_empty_chat, render_section_intro, render_sidebar_brand
 
 # ──────────────────────────────────────────────────────────────
 #  Config
@@ -125,7 +133,7 @@ def render_message(msg: dict, message_index: int = 0):
             _render_file_list(meta["file_list"])
 
         if meta.get("warnings"):
-            from app.services.chat_presentation import visible_chat_warnings
+            from app.services.chat.chat_presentation import visible_chat_warnings
             for w in visible_chat_warnings(meta["warnings"]):
                 st.warning(w)
 
@@ -434,12 +442,12 @@ with st.sidebar:
             call_api("/api/chat/update/cancel", {"project": st.session_state.project,
                 "session_id": st.session_state.agent_session_id,
                 "token": st.session_state.pending_update["token"]})
-        from app.services.chat_history import switch_chat
+        from app.services.chat.chat_history import switch_chat
         switch_chat(st.session_state)
         st.session_state.workspace_section = "Chatbot"
         st.rerun()
 
-    from app.services.chat_history import save_current, switch_chat
+    from app.services.chat.chat_history import save_current, switch_chat
     save_current(st.session_state)
     st.caption("L\u1ecbch s\u1eed tr\u00f2 chuy\u1ec7n")
     threads = st.session_state.get("chat_threads", {})

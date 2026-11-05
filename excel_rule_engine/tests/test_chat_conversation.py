@@ -2,7 +2,7 @@
 from pathlib import Path
 from unittest.mock import patch
 import pytest
-from app.services import chat_conversation as chat
+from app.services.chat import chat_conversation as chat
 
 
 @pytest.fixture
@@ -75,7 +75,7 @@ def test_explicit_export_creates_one_workbook(workspace,monkeypatch):
 
 
 def test_update_requires_button_confirmation_and_cannot_replay(workspace):
-    from app.services.source_updates import _PENDING
+    from app.services.sources.source_updates import _PENDING
     _PENDING.clear()
     action=turn('update')
     action['update']={'source':'staff.csv','key_column':'name','key_value':'An','column':'salary','value':'30'}
@@ -105,8 +105,8 @@ def test_retrieval_turn_uses_cited_answer_without_export(workspace):
     hits={'hits':[{'id':'r1','text':'name=An; note=remote','source':'staff.csv','sheet':'CSV','row':2}],
           'fingerprint':'v1','total_documents':2,'truncated':True}
     with patch.object(chat,'route_turn',return_value=turn('retrieve','An lam viec o dau?')), \
-         patch('app.services.rag_index.search',return_value=hits), \
-         patch('app.services.rag_answer.answer_from_evidence',return_value={'reply':'An works remotely [1]',
+         patch('app.services.ai.rag_index.search',return_value=hits), \
+         patch('app.services.ai.rag_answer.answer_from_evidence',return_value={'reply':'An works remotely [1]',
              'citations':[{'number':1,**hits['hits'][0]}],'insufficient':False}), \
          patch.object(chat.reports,'_preview',side_effect=AssertionError('no report')):
         response=chat.chat(workspace,'demo','An lam viec o dau?')

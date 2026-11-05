@@ -7,11 +7,11 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import requests
-from app.services.download_service import EXCEL_MIME, fetch_output_file
+from app.services.runtime.download_service import EXCEL_MIME, fetch_output_file
 
 
 class TestDownloadService(unittest.TestCase):
-    @patch('app.services.download_service.requests.get')
+    @patch('app.services.runtime.download_service.requests.get')
     def test_fetches_bytes_and_encodes_names(self, get):
         get.return_value.content = b'xlsx-content'
         result = fetch_output_file('http://localhost:8000/', 'demo project', 'report #1.xlsx')
@@ -20,7 +20,7 @@ class TestDownloadService(unittest.TestCase):
             'http://localhost:8000/api/download/demo%20project/report%20%231.xlsx', timeout=30)
         get.return_value.raise_for_status.assert_called_once()
 
-    @patch('app.services.download_service.requests.get')
+    @patch('app.services.runtime.download_service.requests.get')
     def test_http_errors_propagate(self, get):
         get.return_value.raise_for_status.side_effect = requests.HTTPError('404')
         with self.assertRaises(requests.HTTPError):
@@ -28,7 +28,7 @@ class TestDownloadService(unittest.TestCase):
 
     def renderer(self, loader):
         # Load only this UI helper without executing the full interactive app.
-        source = Path(__file__).resolve().parents[1] / 'app' / 'chatbot.py'
+        source = Path(__file__).resolve().parents[1] / 'app' / 'ui' / 'chatbot.py'
         tree = ast.parse(source.read_text(encoding='utf-8'))
         node = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
                     and n.name == '_render_download_button')

@@ -4,7 +4,8 @@ FastAPI Main Application - REST API cho Excel Rule Engine.
 
 from __future__ import annotations
 
-from app.services.environment import load_environment
+from app.paths import PROJECTS_DIR
+from app.services.runtime.environment import load_environment
 load_environment()
 
 import logging
@@ -30,7 +31,7 @@ from app.database.db import init_db
 from app.database.task_repository import (
     create_task, update_task_status, list_tasks, ensure_session,
 )
-from app.services.file_manager import (
+from app.services.sources.file_manager import (
     get_input_dir, get_output_dir, list_excel_files, file_info, set_projects_root,
 )
 from app.workflows.aggregation import run_aggregation
@@ -46,8 +47,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Đặt projects root
-_BASE_DIR = Path(__file__).resolve().parent.parent
-set_projects_root(_BASE_DIR / "projects")
+set_projects_root(PROJECTS_DIR)
 
 app = FastAPI(
     title="Excel Rule Engine API",
@@ -119,9 +119,9 @@ async def handle_command(req: CommandRequest) -> CommandResponse:
     session_id = req.session_id or str(uuid.uuid4())
     ensure_session(session_id, req.project)
 
-    from app.services.planner_settings import planner_mode
+    from app.services.ai.planner_settings import planner_mode
     if planner_mode() == 'openai':
-        from app.services.chat_conversation import chat
+        from app.services.chat.chat_conversation import chat
         task_id = create_task(session_id, "CHAT", req.text)
         try:
             # New /api/chat clients retain their server-issued conversational id.
@@ -146,7 +146,7 @@ async def handle_command(req: CommandRequest) -> CommandResponse:
 
     from app.core.analytical_request import is_analytical_request
     if is_analytical_request(req.text) and parsed.intent != "DELETE":
-        from app.services.conversation_reporting import preview_request
+        from app.services.reports.conversation_reporting import preview_request
         try:
             plan = preview_request(get_input_dir(req.project), req.text)
             update_task_status(task_id, "pending")
@@ -371,7 +371,7 @@ async def download_file(project: str, filename: str):
     output_dir = get_output_dir(project)
     # Kiểm tra path traversal
     try:
-        from app.services.file_manager import _safe_resolve
+        from app.services.sources.file_manager import _safe_resolve
         file_path = _safe_resolve(output_dir, filename)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -410,7 +410,7 @@ async def health():
 @app.get("/api/planner/status")
 def report_planner_status():
     """Expose mode, never credentials."""
-    from app.services.planner_settings import planner_status
+    from app.services.ai.planner_settings import planner_status
     try:
         return planner_status()
     except ValueError as exc:
@@ -431,7 +431,7 @@ class ChatUpdateConfirm(BaseModel):
 
 @app.post("/api/chat/sources/upload")
 async def upload_chat_source(project: str = Form("demo_project"), file: UploadFile = File(...)):
-    from app.services.source_uploads import save_source
+    from app.services.sources.source_uploads import save_source
     try:
         raw = await file.read(40 * 1024 * 1024 + 1)
         return save_source(get_input_dir(project), file.filename, raw)
@@ -443,7 +443,7 @@ async def upload_chat_source(project: str = Form("demo_project"), file: UploadFi
 
 @app.post("/api/chat")
 def conversation_turn(req: ChatTurnRequest):
-    from app.services.chat_conversation import chat
+    from app.services.chat.chat_conversation import chat
     try:
         return chat(get_input_dir(req.project), req.project, req.text, req.session_id)
     except ValueError as exc:
@@ -452,7 +452,7 @@ def conversation_turn(req: ChatTurnRequest):
 
 @app.post("/api/chat/update/cancel")
 def conversation_update_cancel(req: ChatUpdateConfirm):
-    from app.services.chat_conversation import cancel
+    from app.services.chat.chat_conversation import cancel
     try:
         return cancel(get_input_dir(req.project), req.session_id)
     except ValueError as exc:
@@ -461,7 +461,7 @@ def conversation_update_cancel(req: ChatUpdateConfirm):
 
 @app.post("/api/chat/update/confirm")
 def conversation_update_confirm(req: ChatUpdateConfirm):
-    from app.services.chat_conversation import confirm
+    from app.services.chat.chat_conversation import confirm
     try:
         return confirm(get_input_dir(req.project), req.session_id, req.token)
     except ValueError as exc:
@@ -481,7 +481,7 @@ class ConfirmReportRequest(ReportPlanRequest):
 @app.post("/api/report/preview")
 async def preview_conversation_report(req: ReportPlanRequest):
     """Inspect an explicit source selection; never generate an output here."""
-    from app.services.conversation_reporting import preview_request
+    from app.services.reports.conversation_reporting import preview_request
     try:
         return preview_request(get_input_dir(req.project), req.text, req.source_name)
     except ValueError as exc:
@@ -491,7 +491,7 @@ async def preview_conversation_report(req: ReportPlanRequest):
 @app.post("/api/report/auto")
 async def automatic_conversation_report(req: ReportPlanRequest):
     """Execute a ready plan on one snapshot, otherwise ask for missing input."""
-    from app.services.conversation_reporting import automatic_request
+    from app.services.reports.conversation_reporting import automatic_request
     try:
         return automatic_request(get_input_dir(req.project), req.project, req.text, req.source_name)
     except ValueError as exc:
@@ -501,7 +501,7 @@ async def automatic_conversation_report(req: ReportPlanRequest):
 @app.post("/api/report/confirm")
 async def confirm_conversation_report(req: ConfirmReportRequest):
     """Rebuild and validate the approved plan against current source bytes."""
-    from app.services.conversation_reporting import execute_request
+    from app.services.reports.conversation_reporting import execute_request
     try:
         return {"result": execute_request(get_input_dir(req.project), req.project, req.text,
                                           req.source_name, req.fingerprint)}
@@ -519,7 +519,7 @@ if __name__ == "__main__":
     print("   KHỞI ĐỘNG EXCEL RULE ENGINE SYSTEM")
     print("=" * 55)
 
-    chatbot_script = Path(__file__).resolve().parent / "chatbot.py"
+    chatbot_script = Path(__file__).resolve().parent / "ui" / "chatbot.py"
     
     # Khởi động Streamlit Chatbot chạy ngầm song song
     streamlit_cmd = [

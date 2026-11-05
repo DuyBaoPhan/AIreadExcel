@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pandas as pd
 from openpyxl import load_workbook
 
-from app.services.report_builder import (
+from app.services.reports.report_builder import (
     inspect_sheets, read_uploaded_table, build_report_bytes, MAX_UPLOAD_BYTES,
 )
 
@@ -53,7 +53,7 @@ class ReportBuilderTests(unittest.TestCase):
                        {"sheet_name": None}, {"header_row": True}):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 read_uploaded_table("a.xlsx", self.workbook(), **kwargs)
-        with patch("app.services.report_builder.MAX_ROWS", 1), self.assertRaises(ValueError):
+        with patch("app.services.reports.report_builder.MAX_ROWS", 1), self.assertRaises(ValueError):
             read_uploaded_table("x.csv", b"A\n1\n2\n")
 
     def test_general_workbook_and_safe_detail(self):

@@ -7,7 +7,7 @@ from unittest.mock import patch
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
 
-from app.services.source_updates import propose_update, confirm_update
+from app.services.sources.source_updates import propose_update, confirm_update
 
 
 class SourceUpdateTests(unittest.TestCase):
@@ -77,7 +77,7 @@ class SourceUpdateTests(unittest.TestCase):
             (Path(second) / self.path.name).write_bytes(self.path.read_bytes())
             with self.assertRaises(ValueError):
                 confirm_update(second, result['token'])
-        with patch('app.services.source_updates.time.monotonic', return_value=float('inf')):
+        with patch('app.services.sources.source_updates.time.monotonic', return_value=float('inf')):
             with self.assertRaisesRegex(ValueError, 'expired'):
                 confirm_update(self.root, result['token'])
 
@@ -117,7 +117,7 @@ class SourceUpdateTests(unittest.TestCase):
     def test_replace_failure_leaves_original_and_backup(self):
         result = self.propose()
         original = self.path.read_bytes()
-        with patch('app.services.source_updates.os.replace', side_effect=OSError('failure')):
+        with patch('app.services.sources.source_updates.os.replace', side_effect=OSError('failure')):
             with self.assertRaises(OSError):
                 confirm_update(self.root, result['token'])
         self.assertEqual(self.path.read_bytes(), original)

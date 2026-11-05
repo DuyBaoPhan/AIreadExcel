@@ -2,8 +2,8 @@
 from pathlib import Path
 from unittest.mock import patch
 import pandas as pd
-from app.services.column_metadata import describe_column
-from app.services import chat_conversation as chat
+from app.services.sources.column_metadata import describe_column
+from app.services.chat import chat_conversation as chat
 
 
 def test_month_descriptor_no_values():

@@ -4,6 +4,8 @@ Database module - SQLite setup và session management.
 
 from __future__ import annotations
 
+from app.paths import DATABASE_PATH
+
 import sqlite3
 import logging
 from pathlib import Path
@@ -21,7 +23,7 @@ def set_db_path(path: str | Path) -> None:
 
 def get_db_path() -> Path:
     if _DB_PATH is None:
-        default = Path(__file__).resolve().parents[2] / "excel_rule_engine.db"
+        default = DATABASE_PATH
         return default
     return _DB_PATH
 

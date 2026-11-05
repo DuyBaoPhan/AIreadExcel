@@ -10,14 +10,14 @@ from streamlit.testing.v1 import AppTest
 
 SCRIPT = '''
 from unittest.mock import patch
-from app.advanced_report_wizard import render_advanced_report_wizard
+from app.ui.advanced_report_wizard import render_advanced_report_wizard
 class Uploaded:
     name = 'sales.csv'
     def getvalue(self):
         return b'department,salary\\nIT,100\\nHR,200\\n'
 def upload(label, **kwargs):
     return Uploaded() if kwargs.get('key') == 'advanced_primary' else None
-with patch('app.advanced_report_wizard.st.file_uploader', side_effect=upload):
+with patch('app.ui.advanced_report_wizard.st.file_uploader', side_effect=upload):
     render_advanced_report_wizard()
 '''
 
@@ -25,7 +25,7 @@ with patch('app.advanced_report_wizard.st.file_uploader', side_effect=upload):
 class TestAdvancedReportWizard(unittest.TestCase):
     def test_no_upload_without_api(self):
         app = AppTest.from_string(
-            'from app.advanced_report_wizard import render_advanced_report_wizard\nrender_advanced_report_wizard()'
+            'from app.ui.advanced_report_wizard import render_advanced_report_wizard\nrender_advanced_report_wizard()'
         ).run(timeout=60)
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(len(app.get('file_uploader')), 1)

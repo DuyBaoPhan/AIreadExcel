@@ -4,8 +4,8 @@ from pathlib import Path
 from unittest.mock import patch
 import pandas as pd
 import pytest
-from app.services.report_naming import report_stem,report_filename,safe_stem
-from app.services import conversation_reporting as reports
+from app.services.reports.report_naming import report_stem,report_filename,safe_stem
+from app.services.reports import conversation_reporting as reports
 
 
 def config(**extra):

@@ -22,3 +22,14 @@ excel_rule_engine/projects/*/output/*
 .DS_Store
 Thumbs.db
 
+
+# API credentials (use environment or Streamlit Secrets)
+.env
+.env.*
+!.env.example
+**/.streamlit/secrets.toml
+
+# Local test and tool caches
+.pytest_cache/
+.coverage
+htmlcov/

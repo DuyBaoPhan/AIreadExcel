@@ -1,46 +1,33 @@
-# Excel Rule Engine — Hệ thống xử lý Excel bằng Rule-based Engine
+# Excel Studio - Excel AI & Reporting
 
-> Chatbot Excel AI hoàn toàn bằng Python, hiểu câu lệnh tiếng Việt qua **Rule-based NLP** — không sử dụng LLM, không gọi API AI bên ngoài.
+> Excel chatbot and report engine with Vietnamese rule-based planning, optional OpenAI integration, and hybrid local retrieval. See the AI/RAG sections below for configuration and privacy boundaries.
 
 ---
 
 ## 🏗️ Kiến trúc hệ thống
 
-```
-excel_rule_engine/
-│
-├── app/
-│   ├── main.py              ← FastAPI backend
-│   ├── chatbot.py           ← Streamlit UI
-│   │
-│   ├── core/
-│   │   ├── intent_router.py     ← Rule-based NLP phân loại intent
-│   │   ├── command_parser.py    ← Parser → ParsedCommand (Pydantic)
-│   │   ├── entity_extractor.py  ← Trích xuất cột, toán tử, giá trị
-│   │   └── response_generator.py← Tạo phản hồi thân thiện
-│   │
-│   ├── workflows/
-│   │   ├── aggregation.py   ← Gộp nhiều file Excel
-│   │   ├── filtering.py     ← Lọc dữ liệu theo điều kiện
-│   │   ├── comparison.py    ← So sánh Root vs Update
-│   │   └── report_export.py ← Tạo báo cáo tổng hợp
-│   │
-│   ├── services/
-│   │   ├── excel_reader.py  ← Đọc file an toàn
-│   │   ├── excel_writer.py  ← Ghi file với định dạng
-│   │   └── file_manager.py  ← Quản lý file trong project
-│   │
-│   └── database/
-│       ├── db.py            ← SQLite setup
-│       └── task_repository.py← CRUD lịch sử tác vụ
-│
-├── projects/demo_project/
-│   ├── input/               ← Đặt file Excel nguồn tại đây
-│   └── output/              ← Kết quả xuất ra đây
-│
-└── tests/
-    ├── test_system.py       ← Unit tests
-    └── create_sample_data.py← Tạo dữ liệu mẫu
+See [Architecture](docs/architecture.md) for application layers and directory conventions.
+
+```text
+AIreadExcel/
+|-- README.md                 # Start here
+|-- main.py                   # Local launcher
+|-- streamlit_app.py          # Streamlit Cloud
+|-- requirements*.txt
+|-- docs/                     # Guides and evaluation results
+|-- scripts/                  # Demo generators and manual checks
+`-- excel_rule_engine/
+    |-- app/
+    |   |-- main.py           # FastAPI
+    |   |-- paths.py          # Shared filesystem paths
+    |   |-- core/             # Parsing and rule-based planning
+    |   |-- ui/               # Streamlit interface
+    |   |-- services/         # ai, chat, excel, reports, sources, runtime
+    |   |-- database/         # SQLite persistence
+    |   `-- workflows/        # Deterministic data processing
+    |-- tests/
+    |-- examples/             # Report configuration samples
+    `-- projects/             # Existing source files and report outputs
 ```
 
 ---
@@ -54,7 +41,7 @@ excel_rule_engine/
 ### Bước 1: Clone và vào thư mục
 
 ```bash
-cd excel_rule_engine
+cd AIreadExcel
 ```
 
 ### Bước 2: Tạo môi trường ảo
@@ -79,11 +66,18 @@ pip install -r requirements.txt
 
 ## 🚀 Chạy ứng dụng
 
+Recommended: run from the repository root to launch both backend and UI:
+
+```bash
+python main.py
+```
+
+For separate development processes, open two terminals at the repository root:
+
 ### Terminal 1 — Khởi động FastAPI Backend
 
 ```bash
-cd excel_rule_engine
-uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --app-dir excel_rule_engine --reload --port 8000
 ```
 
 API docs tại: http://localhost:8000/docs
@@ -91,8 +85,7 @@ API docs tại: http://localhost:8000/docs
 ### Terminal 2 — Khởi động Streamlit Chatbot
 
 ```bash
-cd excel_rule_engine
-streamlit run app/chatbot.py
+python -m streamlit run excel_rule_engine/app/ui/chatbot.py
 ```
 
 Giao diện tại: http://localhost:8501
@@ -102,13 +95,13 @@ Giao diện tại: http://localhost:8501
 ## 📊 Tạo dữ liệu mẫu
 
 ```bash
-cd excel_rule_engine
-python tests/create_sample_data.py
+python scripts/create_sample_data.py
 ```
 
-Tạo ra 5 file Excel trong `projects/demo_project/input/`:
+Tạo ra 6 file Excel trong `excel_rule_engine/projects/demo_project/input/`:
 - `Employees_IT.xlsx` — Nhân viên phòng IT
-- `Employees_HR_Accounting.xlsx` — Nhân viên HR & Kế toán
+- `Employees_Business.xlsx` - Sales, Marketing, HR, Finance
+- `Employees_Operations.xlsx` - Warehouse, Production, Logistics
 - `Sales_Data.xlsx` — Dữ liệu doanh thu
 - `Root_Employees.xlsx` — File gốc cho so sánh
 - `Update_Employees.xlsx` — File cập nhật cho so sánh
@@ -118,8 +111,7 @@ Tạo ra 5 file Excel trong `projects/demo_project/input/`:
 ## 🧪 Chạy Unit Tests
 
 ```bash
-cd excel_rule_engine
-python -m pytest tests/test_system.py -v
+python -m pytest
 ```
 
 ---
@@ -145,8 +137,8 @@ python -m pytest tests/test_system.py -v
 
 ## 🔒 Quy tắc an toàn
 
-- ✅ **Không sử dụng LLM** hay API AI bên ngoài
-- ✅ **Không ghi đè file gốc** — output luôn vào thư mục `output/`
+- Offline rules work without an LLM; optional OpenAI planning and RAG send the documented request/metadata or evidence excerpts to the provider.
+- Report exports write into `output/`. Explicit source-update requests can modify a source only after the separate confirmation flow; a backup is retained.
 - ✅ **Chặn path traversal** — chỉ truy cập trong phạm vi project
 - ✅ **Không tự xóa dữ liệu** — lệnh DELETE bị chặn hoàn toàn
 - ✅ **Không tự suy đoán Primary Key** — yêu cầu xác nhận từ người dùng
@@ -234,7 +226,7 @@ Mục **Báo cáo nâng cao** dùng bộ tính toán xác định, không gửi 
 ### Giới hạn và tính đúng
 Tối đa mỗi file 20 MB, workbook giải nén 200 MB, 100.000 dòng, 200 cột; bảng tổng hợp tối đa 1 triệu ô; cấu hình 100 KiB. Không tự đoán cột tiền, đơn vị tiền tệ, công thức nghiệp vụ hay loại trùng. Excel công thức được đọc theo giá trị cache có sẵn, không được tính lại; hãy tính/lưu workbook trong Excel trước khi upload. CSV phải là UTF-8, dấu phân cách phẩy. Chưa hỗ trợ biểu thức tùy ý, PDF, lập lịch, dữ liệu ngoài hoặc mọi yêu cầu ngôn ngữ tự nhiên.
 
-Cấu hình mẫu ở `examples/hr_report.json`, `examples/payroll_pivot.json`, `examples/period_comparison.json`; thay tên cột và khoảng ngày theo nguồn thực tế. Mẫu so sánh dùng ngày bắt đầu làm việc chỉ để minh họa kỹ thuật, không phải so sánh quỹ lương tháng thực tế.
+Cấu hình mẫu ở `excel_rule_engine/examples/hr_report.json`, `excel_rule_engine/examples/payroll_pivot.json`, `excel_rule_engine/examples/period_comparison.json`; thay tên cột và khoảng ngày theo nguồn thực tế. Mẫu so sánh dùng ngày bắt đầu làm việc chỉ để minh họa kỹ thuật, không phải so sánh quỹ lương tháng thực tế.
 
 Giới hạn xuất Excel có định dạng: tổng Data + Summary tối đa 1.000.000 ô. Ô chữ/tiêu đề dài hơn giới hạn Excel 32.767 ký tự UTF-16 sẽ bị từ chối, không cắt ngầm. Sheet Configuration lưu JSON thành các đoạn; ghép các ô theo thứ tự, không thêm dấu phân cách, để khôi phục JSON. Nút tải cấu hình JSON là cách dùng lại cấu hình trực tiếp.
 
@@ -250,7 +242,7 @@ Theme dark/cyan tự chứa, không gọi font/CDN ngoài; có trạng thái foc
 
 Danh sách thư viện dùng chung nằm tại `requirements.txt` ở gốc repository. Bản `excel_rule_engine/requirements.txt` tham chiếu danh sách đó bằng `-r ../requirements.txt`, nên có thể tiếp tục cài từ cả hai thư mục mà không duy trì hai bộ phiên bản khác nhau. Giữ nguyên chính sách khoảng phiên bản của bản gốc; đây chưa phải lockfile tái lập môi trường.
 
-File sinh trong `excel_rule_engine/projects/*/output/` được Git bỏ qua, ngoại trừ `.gitkeep`. Các báo cáo cũ đã được bỏ theo dõi trong index, không xóa file trên máy thực hiện dọn dẹp và không viết lại lịch sử Git. Sau khi commit/pull thay đổi này ở máy khác, các bản output từng được theo dõi có thể bị Git xóa tại đó; sao lưu báo cáo cần giữ trước khi cập nhật. Có thể tạo lại mẫu bằng `python tests/create_advanced_reports.py` từ thư mục engine.
+File sinh trong `excel_rule_engine/projects/*/output/` được Git bỏ qua, ngoại trừ `.gitkeep`. Các báo cáo cũ đã được bỏ theo dõi trong index, không xóa file trên máy thực hiện dọn dẹp và không viết lại lịch sử Git. Sau khi commit/pull thay đổi này ở máy khác, các bản output từng được theo dõi có thể bị Git xóa tại đó; sao lưu báo cáo cần giữ trước khi cập nhật. Có thể tạo lại mẫu bằng `python scripts/create_advanced_reports.py` from the repository root.
 
 ## Chatbot hiểu yêu cầu báo cáo theo dữ liệu (không LLM)
 
@@ -266,7 +258,7 @@ Các mẫu câu trong phạm vi hỗ trợ:
 - “Đếm dòng doanh thu từ 10 đến 30 triệu”
 - “Top 5 sản phẩm doanh thu cao nhất”
 
-Tên sản phẩm/phòng ban/khu vực/trạng thái được khớp từ dữ liệu thật, không hard-code. Tên cột có thể Việt/Anh theo từ điển `SCHEMA_ALIASES` trong `app/core/report_planner.py`. Chuẩn hóa dấu chỉ dùng khi nhận diện; bộ lọc giữ giá trị gốc. Nhiều cột đồng nghĩa hoặc nhiều nguồn đều cần làm rõ. Giá trị tháng YYYY-MM có thể lọc năm; tháng không có năm không được tự suy đoán, trừ khi nguồn xác định duy nhất một năm (hiển thị kế hoạch để kiểm tra).
+Tên sản phẩm/phòng ban/khu vực/trạng thái được khớp từ dữ liệu thật, không hard-code. Tên cột có thể Việt/Anh theo từ điển `SCHEMA_ALIASES` trong `excel_rule_engine/app/core/report_planner.py`. Chuẩn hóa dấu chỉ dùng khi nhận diện; bộ lọc giữ giá trị gốc. Nhiều cột đồng nghĩa hoặc nhiều nguồn đều cần làm rõ. Giá trị tháng YYYY-MM có thể lọc năm; tháng không có năm không được tự suy đoán, trừ khi nguồn xác định duy nhất một năm (hiển thị kế hoạch để kiểm tra).
 
 Chưa hỗ trợ qua câu tự nhiên: dự báo, nối nhiều nguồn, so sánh kỳ, điều kiện OR/loại trừ phức tạp, công thức nghiệp vụ tùy ý hoặc nối tiếp ngữ cảnh kiểu “còn tháng trước?”. Sử dụng Báo cáo nâng cao cho các phép toán có giao diện tương ứng. Nếu còn cụm điều kiện chưa nhận diện, chatbot phải hỏi/từ chối, không xuất thay bằng báo cáo tổng hợp. Các câu xuất tổng hợp chung rõ ràng vẫn dùng luồng cũ.
 
@@ -279,10 +271,10 @@ Kiểm thử toàn bộ (bao gồm tập câu tiếng Việt): cài `pip install
 
 Bộ kiểm thử cố định có 596 trường hợp (572 câu khác nhau), gồm câu có dấu/không dấu, phép tổng/trung bình/đếm/min/max, nhóm nhiều chiều, xếp hạng, lọc số và thời gian, nguồn mơ hồ và điều kiện chưa hỗ trợ. Kết quả kỳ vọng được viết độc lập và đối chiếu số liệu, không chỉ kiểm tra trạng thái “đã hiểu”.
 
-- Kết quả và giới hạn: `../docs/nlp_campaign_results.md`.
-- Lỗi ban đầu và từng câu: `../docs/nlp_benchmark_baseline.json`; so sánh cùng bộ mở rộng: `../docs/nlp_benchmark_expanded_before.json`, `../docs/nlp_benchmark_current.json`.
-- Chạy từ thư mục gốc repository: `excel_rule_engine\venv\Scripts\python.exe -m pytest -q`.
-- Xuất nhật ký từng câu: `excel_rule_engine\venv\Scripts\python.exe excel_rule_engine/tests/test_nlp_benchmark.py --audit docs/nlp_benchmark_current.json`. Chế độ audit luôn lưu cả lỗi và trả mã 0; pytest mới là cổng kiểm tra bắt buộc.
+- Kết quả và giới hạn: `docs/nlp_campaign_results.md`.
+- Lỗi ban đầu và từng câu: `docs/nlp_benchmark_baseline.json`; so sánh cùng bộ mở rộng: `docs/nlp_benchmark_expanded_before.json`, `docs/nlp_benchmark_current.json`.
+- Chạy từ thư mục gốc repository: `python -m pytest -q`.
+- Xuất nhật ký từng câu: `python excel_rule_engine/tests/test_nlp_benchmark.py --audit docs/nlp_benchmark_current.json`. Chế độ audit luôn lưu cả lỗi và trả mã 0; pytest mới là cổng kiểm tra bắt buộc.
 
 Đây là phạm vi đã kiểm thử, không phải cam kết hiểu mọi câu tiếng Việt. Trường hợp phạm vi tính toán mơ hồ sẽ hỏi lại, không tự bỏ điều kiện hoặc chuyển sang gộp file. Khởi động lại cả backend sau khi cập nhật mã nguồn.
 
@@ -298,7 +290,7 @@ Chatbot mặc định bật **Tự động tạo báo cáo**: chọn nguồn d�
 
 **Streamlit Cloud:** đưa toàn bộ mã mới lên đúng repository/branch của app, sau đó chọn **Reboot app** trong phần quản lý ứng dụng. Backend cần có cả các tuyến lập kế hoạch, xác nhận và `POST /api/report/auto`; chỉ tải lại trang trình duyệt không bảo đảm backend cũ đã được thay. Không chuyển sang gộp file khi gặp HTTP 404.
 
-Kết quả kiểm thử và giới hạn của đợt nâng cấp: [automatic_reporting_results.md](../docs/automatic_reporting_results.md).
+Kết quả kiểm thử và giới hạn của đợt nâng cấp: [automatic_reporting_results.md](docs/automatic_reporting_results.md).
 
 ### Quy tắc ưu tiên nguồn theo phòng ban
 

@@ -22,7 +22,7 @@ python -c "import fastapi" 2>/dev/null || pip install -r requirements.txt
 # Tạo dữ liệu mẫu
 if [ ! -f "projects/demo_project/input/Employees_IT.xlsx" ]; then
     echo "[INFO] Tạo dữ liệu mẫu..."
-    python tests/create_sample_data.py
+    python ../scripts/create_sample_data.py
 fi
 
 # Khởi tạo DB
@@ -35,7 +35,7 @@ FASTAPI_PID=$!
 sleep 2
 
 echo "[INFO] Khởi động Streamlit..."
-streamlit run app/chatbot.py --server.port 8501 &
+streamlit run app/ui/chatbot.py --server.port 8501 &
 STREAMLIT_PID=$!
 
 echo ""

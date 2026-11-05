@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from app.services import conversation_reporting as service
+from app.services.reports import conversation_reporting as service
 
 
 @pytest.fixture

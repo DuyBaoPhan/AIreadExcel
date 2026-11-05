@@ -19,7 +19,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.core.report_planner import plan_report
-from app.services.report_engine import run_report
+from app.services.reports.report_engine import run_report
 try:
     from .nlp_benchmark_cases import CASES, fixtures
 except ImportError:
@@ -82,7 +82,7 @@ def evaluate(case):
     try:
         if case['route']:
             from app.main import CommandRequest, handle_command
-            with patch('app.main.ensure_session'), patch('app.main.create_task', return_value=1), patch('app.main.update_task_status'), patch('app.main.run_export_report') as export, patch('app.main.run_aggregation'), patch('app.main.run_filter'), patch('app.main.run_comparison'), patch('app.services.conversation_reporting.preview_request', return_value={'status':'ready', 'source':'fixture', 'config':{'version':1}, 'fingerprint':'benchmark'}) as preview:
+            with patch('app.main.ensure_session'), patch('app.main.create_task', return_value=1), patch('app.main.update_task_status'), patch('app.main.run_export_report') as export, patch('app.main.run_aggregation'), patch('app.main.run_filter'), patch('app.main.run_comparison'), patch('app.services.reports.conversation_reporting.preview_request', return_value={'status':'ready', 'source':'fixture', 'config':{'version':1}, 'fingerprint':'benchmark'}) as preview:
                 response = asyncio.run(handle_command(CommandRequest(text=case['text'])))
             report['actual'] = {'preview_calls':preview.call_count, 'export_calls':export.call_count, 'requires_input':response.requires_input}
             if preview.call_count != 1 or export.call_count != 0 or not response.requires_input or response.requires_input.get('type') != 'report_plan':

@@ -2,7 +2,7 @@
 import json
 import os
 import requests
-from app.services.openai_planner import _object, _STRING, _matches, _pairs
+from app.services.ai.openai_planner import _object, _STRING, _matches, _pairs
 
 _SCHEMA=_object({'claims':{'type':'array','items':_object({'text':_STRING,
     'evidence_ids':{'type':'array','items':_STRING}})},'insufficient':{'type':'boolean'}})

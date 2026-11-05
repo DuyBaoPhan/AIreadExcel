@@ -8,8 +8,8 @@ import re
 import pandas as pd
 import requests
 
-from app.services.report_engine import serialize_config
-from app.services.column_metadata import describe_column
+from app.services.reports.report_engine import serialize_config
+from app.services.sources.column_metadata import describe_column
 
 MAX_TEXT = 8000
 MAX_CATALOG_BYTES = 48 * 1024

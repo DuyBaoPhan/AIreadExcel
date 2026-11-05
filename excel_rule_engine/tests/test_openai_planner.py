@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 import requests
 
-from app.services import openai_planner as planner
+from app.services.ai import openai_planner as planner
 
 
 @pytest.fixture
@@ -195,7 +195,7 @@ def test_valid_ranking_scope_converted_to_engine_config(monkeypatch, sources, pl
     result = planner.plan_with_openai('highest takings', sources)
     assert result['status'] == 'ready'
     assert 'scope' not in result['config']['top_n']
-    from app.services.report_engine import run_report
+    from app.services.reports.report_engine import run_report
     report = run_report(sources['sales.xlsx'], result['config'])
     assert len(report['summary'] if scope == 'summary' else report['data']) == 1
 
@@ -239,7 +239,7 @@ def test_unique_translated_column_references_resolved(monkeypatch):
     result=planner.plan_with_openai('xuat bao cao doanh thu nam 2024',sources)
     assert result['config']['filters'][0]['column']=='month'
     assert result['config']['metrics'][0]['column']=='revenue'
-    from app.services.report_engine import run_report
+    from app.services.reports.report_engine import run_report
     assert run_report(sources['sales.xlsx'],result['config'])['summary']['Total'].tolist()==[100]
 
 

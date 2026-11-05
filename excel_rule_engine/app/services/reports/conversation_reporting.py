@@ -5,16 +5,16 @@ import hashlib
 import hmac
 import json
 from pathlib import Path
-from app.services.report_naming import report_filename
+from app.services.reports.report_naming import report_filename
 
 
-from app.services.advanced_report_export import build_advanced_report_bytes
-from app.services.file_manager import list_excel_files, safe_output_path
-from app.services.report_builder import read_uploaded_table
-from app.services.report_engine import run_report, serialize_config
+from app.services.reports.advanced_report_export import build_advanced_report_bytes
+from app.services.sources.file_manager import list_excel_files, safe_output_path
+from app.services.reports.report_builder import read_uploaded_table
+from app.services.reports.report_engine import run_report, serialize_config
 from app.core.report_planner import plan_report
-from app.services.source_policy import apply_source_policy
-from app.services.planner_settings import planner_mode
+from app.services.sources.source_policy import apply_source_policy
+from app.services.ai.planner_settings import planner_mode
 
 MAX_SOURCE_FILES = 20
 MAX_SOURCE_BYTES = 40 * 1024 * 1024
@@ -63,7 +63,7 @@ def _preview(input_dir: Path, text: str, source_name: str | None):
         raise ValueError('Vui long nhap yeu cau bao cao.')
     sources, snapshots, names, warnings = _load_sources(input_dir, source_name)
     if planner_mode() == 'openai':
-        from app.services.openai_planner import plan_with_openai
+        from app.services.ai.openai_planner import plan_with_openai
         policy_path = Path(input_dir).parent / 'source_policy.json'
         policy = None
         if policy_path.exists():
@@ -105,7 +105,7 @@ def _preview(input_dir: Path, text: str, source_name: str | None):
         digest.update(snapshots[source])
         plan['fingerprint'] = digest.hexdigest()
         if plan.get('planner') == 'openai':
-            from app.services.ai_approval import remember
+            from app.services.ai.ai_approval import remember
             remember(input_dir, text, plan, snapshots)
     return plan, sources
 
@@ -120,7 +120,7 @@ def _evidence_warnings(result: dict, config: dict) -> list[str]:
     data, summary = result['data'], result['summary']
     comparison = config.get('comparison')
     if comparison:
-        from app.services.report_engine import _convert, _date_scalar
+        from app.services.reports.report_engine import _convert, _date_scalar
         dates = _convert(data[comparison['date_column']], 'date')
         evidence = dates.between(_date_scalar(comparison['current_start']), _date_scalar(comparison['current_end']))
         evidence |= dates.between(_date_scalar(comparison['previous_start']), _date_scalar(comparison['previous_end']))
@@ -159,7 +159,7 @@ def execute_request(input_dir: Path, project_name: str, text: str,
                     source_name: str | None, fingerprint: str) -> dict:
     """Replan from fresh bytes and execute only the exact approved snapshot/config."""
     if planner_mode() == 'openai':
-        from app.services.ai_approval import approved
+        from app.services.ai.ai_approval import approved
         sources, snapshots, _, _ = _load_sources(input_dir, source_name)
         plan = approved(input_dir, text, source_name, fingerprint, snapshots)
         if plan is None:

@@ -7,8 +7,8 @@ import json
 import pandas as pd
 import streamlit as st
 
-from app.services.download_service import EXCEL_MIME
-from app.services.report_builder import (
+from app.services.runtime.download_service import EXCEL_MIME
+from app.services.reports.report_builder import (
     inspect_sheets, read_uploaded_table, build_report_bytes,
 )
 

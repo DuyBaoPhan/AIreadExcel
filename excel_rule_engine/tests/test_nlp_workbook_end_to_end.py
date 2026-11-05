@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 from openpyxl import load_workbook
-from app.services import conversation_reporting as service
+from app.services.reports import conversation_reporting as service
 
 
 @pytest.fixture

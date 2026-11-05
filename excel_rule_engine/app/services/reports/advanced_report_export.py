@@ -12,7 +12,7 @@ from openpyxl.chart import BarChart, Reference
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 
-from app.services.report_styles import NAVY, TEAL, prepare_sheet, title_band, write_table
+from app.services.reports.report_styles import NAVY, TEAL, prepare_sheet, title_band, write_table
 
 
 def _literal(ws: Any, row: int, col: int, value: str) -> None:

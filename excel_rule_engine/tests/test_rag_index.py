@@ -6,7 +6,7 @@ import numpy as np
 from openpyxl import Workbook
 import pytest
 
-from app.services import rag_index as rag
+from app.services.ai import rag_index as rag
 
 
 class FakeEmbedder:

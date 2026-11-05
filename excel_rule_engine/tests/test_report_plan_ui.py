@@ -7,7 +7,7 @@ from streamlit.testing.v1 import AppTest
 
 SCRIPT = '''
 import streamlit as st
-from app.report_plan_ui import render_pending_report
+from app.ui.report_plan_ui import render_pending_report
 if 'pending_report' not in st.session_state:
     st.session_state.pending_report = {'status': 'ready', 'source': 'sales.csv', 'text': 'revenue',
         'project': 'demo', 'fingerprint': 'abc', 'config': {'version':1}, 'explanation':['Sum revenue']}

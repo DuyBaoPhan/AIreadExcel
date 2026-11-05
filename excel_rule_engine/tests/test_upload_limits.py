@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pandas as pd
-from app.services.report_builder import read_uploaded_table, inspect_sheets
+from app.services.reports.report_builder import read_uploaded_table, inspect_sheets
 
 
 class TestUploadLimits(unittest.TestCase):
@@ -21,7 +21,7 @@ class TestUploadLimits(unittest.TestCase):
         archive = BytesIO()
         with ZipFile(archive, 'w', compression=ZIP_DEFLATED) as wb:
             wb.writestr('document.xml', 'abc')
-        with patch('app.services.report_builder.ZipFile') as zipfile:
+        with patch('app.services.reports.report_builder.ZipFile') as zipfile:
             entry = type('Entry', (), {'file_size': 201 * 1024 * 1024})()
             zipfile.return_value.__enter__.return_value.infolist.return_value = [entry]
             with self.assertRaisesRegex(ValueError, '200 MB'):

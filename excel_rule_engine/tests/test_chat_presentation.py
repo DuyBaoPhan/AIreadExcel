@@ -1,4 +1,4 @@
-﻿from app.services.chat_presentation import visible_chat_warnings
+﻿from app.services.chat.chat_presentation import visible_chat_warnings
 
 
 def test_hide_metric_notes_preserve_real_warnings():
@@ -15,7 +15,7 @@ def test_filter_details_not_rendered_in_message():
     from contextlib import nullcontext
     from types import SimpleNamespace
     from unittest.mock import Mock
-    path=Path(__file__).resolve().parents[1]/'app/chatbot.py'
+    path=Path(__file__).resolve().parents[1]/'app/ui/chatbot.py'
     tree=ast.parse(path.read_text(encoding='utf-8'))
     node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='render_message')
     ui=SimpleNamespace(chat_message=lambda *a,**k:nullcontext(),markdown=Mock(),warning=Mock(),json=Mock())

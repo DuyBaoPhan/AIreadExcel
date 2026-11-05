@@ -2,7 +2,7 @@
 from io import BytesIO
 from openpyxl import Workbook
 import pytest
-from app.services.source_uploads import save_source
+from app.services.sources.source_uploads import save_source
 
 
 def test_csv_saved_and_duplicate_preserved(tmp_path):

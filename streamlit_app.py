@@ -16,6 +16,9 @@ PROJECT_DIR = CURRENT_DIR / "excel_rule_engine"
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
+from app.services.runtime.environment import load_environment
+load_environment()
+
 # Đảm bảo database được khởi tạo
 try:
     from app.database.db import init_db
@@ -29,7 +32,7 @@ def start_fastapi():
         import requests
         res = requests.get("http://localhost:8000/health", timeout=1)
         if res.status_code == 200:
-            from app.services.backend_capabilities import check_report_api
+            from app.services.runtime.backend_capabilities import check_report_api
             compatible, diagnostic = check_report_api()
             if not compatible:
                 import streamlit as st
@@ -46,10 +49,20 @@ def start_fastapi():
     subprocess.Popen(backend_cmd, cwd=str(PROJECT_DIR))
     time.sleep(2)
 
+# Only documented application secrets are inherited by the backend child.
+import streamlit as st
+for name in ("OPENAI_API_KEY", "OPENAI_MODEL", "REPORT_PLANNER", "RAG_MODEL_PATH"):
+    try:
+        value = st.secrets.get(name)
+    except (FileNotFoundError, KeyError):
+        value = None
+    if value is not None:
+        os.environ[name] = str(value)
+
 start_fastapi()
 
 # Chạy nội dung Chatbot UI
-chatbot_path = PROJECT_DIR / "app" / "chatbot.py"
+chatbot_path = PROJECT_DIR / "app" / "ui" / "chatbot.py"
 with open(chatbot_path, encoding="utf-8") as f:
     code = compile(f.read(), str(chatbot_path), "exec")
     exec(code, globals())

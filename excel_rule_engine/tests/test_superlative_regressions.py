@@ -7,7 +7,7 @@ import pytest
 
 from app.core.analytical_request import is_analytical_request
 from app.core.report_planner import plan_report
-from app.services.report_engine import run_report
+from app.services.reports.report_engine import run_report
 
 PRODUCT_REQUEST = 'sản phẩm nào có doanh thu nhỏ nhất'
 EMPLOYEE_REQUEST = 'nhân viên nào có lương cao nhất'
@@ -90,7 +90,7 @@ def test_exact_salary_question_routes_to_preview_not_legacy_export():
     from app.main import handle_command, CommandRequest
     with patch('app.main.ensure_session'), patch('app.main.create_task', return_value=1), \
          patch('app.main.update_task_status'), patch('app.main.run_export_report') as export, \
-         patch('app.services.conversation_reporting.preview_request', return_value={
+         patch('app.services.reports.conversation_reporting.preview_request', return_value={
              'status': 'ready', 'source': 'hr.xlsx', 'config': {'version': 1}, 'fingerprint': 'abc'}) as preview:
         result = asyncio.run(handle_command(CommandRequest(text=EMPLOYEE_REQUEST)))
     assert result.requires_input['type'] == 'report_plan'
