@@ -371,3 +371,9 @@ Current retrieval limits: 20 input files, 40 MB total raw bytes, 200 MB expanded
 Conversational exports (automatic and manual approval) derive filenames from validated report configuration: measures/operations, grouping, ranking/position, department code and date/month/quarter/year ranges. Example: `Bao_cao_doanh_thu_2024-10__<unique-id>.xlsx`. Query-only turns do not create files. Download uses the actual output basename, so the descriptive name is retained.
 
 Names are ASCII/Windows-safe and length-bounded; device names and separators are excluded. A full random UUID suffix plus exclusive file creation prevents overwriting existing outputs. Names do not use arbitrary model aliases, source filenames or row-level personal/salary filter values. Unknown columns use a generic business label. This does not add free-form user-specified names or change legacy standalone wizard naming.
+
+## Sidebar conversation history
+
+The sidebar now lists conversations (title from first user message, newest activity first), supports creating a new conversation and restoring individual message/agent-session context. Tools, upload and settings are under a collapsed section. Switching conversations cancels pending writes and never restores approval tokens. Clearing a conversation removes its active archive entry. Copies prevent edits in one loaded thread from mutating another.
+
+History is isolated in Streamlit browser-session state, not a permanent account archive. Closing/reconnecting the session or restarting the app can lose it. Agent context expires separately after its existing server TTL. Download the conversation to retain a copy. Durable cross-device history requires authenticated user-owned storage; this implementation does not expose all users' chats from a shared database.

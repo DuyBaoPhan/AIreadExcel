@@ -434,75 +434,86 @@ with st.sidebar:
             call_api("/api/chat/update/cancel", {"project": st.session_state.project,
                 "session_id": st.session_state.agent_session_id,
                 "token": st.session_state.pending_update["token"]})
-        st.session_state.messages = []
-        st.session_state.agent_session_id = None
-        st.session_state.pending_update = None
-        st.session_state.pending_report = None
-        st.session_state.pending_comparison = None
-        st.session_state.session_id = str(uuid.uuid4())
+        from app.services.chat_history import switch_chat
+        switch_chat(st.session_state)
+        st.session_state.workspace_section = "Chatbot"
         st.rerun()
 
-    section = st.radio(
-        "Không gian làm việc",
-        ["Chatbot", "Tạo báo cáo", "Báo cáo nâng cao"],
-        key="workspace_section",
-    )
-    st.divider()
-    project = st.selectbox("Dự án chatbot", options=["demo_project"], index=0)
-    st.session_state.project = project
-    if section == "Chatbot" and st.checkbox("Thêm nguồn cho chatbot / RAG", key="show_chat_upload"):
-        with st.expander("Thêm Excel làm nguồn chatbot / RAG"):
-            st.caption("Tệp sẽ được lưu làm nguồn của dự án; không ghi đè tệp trùng tên. Các đoạn truy xuất có thể được gửi lên OpenAI.")
-            uploaded_source = st.file_uploader("Nguồn Excel/CSV", type=["xlsx", "csv"], key="chat_source_upload")
-            if st.button("Lưu làm nguồn chatbot", key="save_chat_source", disabled=not online or uploaded_source is None):
-                try:
-                    upload_result = requests.post(f"{API_BASE}/api/chat/sources/upload", data={"project": project},
-                        files={"file": (uploaded_source.name, uploaded_source.getvalue())}, timeout=60)
-                    upload_result.raise_for_status()
-                    st.success("Đã thêm nguồn. Chỉ mục sẽ được tạo/làm mới khi tra cứu.")
-                except requests.RequestException:
-                    st.error("Không thể thêm nguồn; kiểm tra tên tệp trùng, định dạng hoặc giới hạn 20 tệp / 40 MB.")
+    from app.services.chat_history import save_current, switch_chat
+    save_current(st.session_state)
+    st.caption("L\u1ecbch s\u1eed tr\u00f2 chuy\u1ec7n")
+    threads = st.session_state.get("chat_threads", {})
+    if not threads:
+        st.caption("Ch\u01b0a c\u00f3 cu\u1ed9c tr\u00f2 chuy\u1ec7n.")
+    for chat_id, thread in sorted(threads.items(), key=lambda item: item[1]['updated'], reverse=True):
+        if st.button(thread['title'], key=f"history_{chat_id}", use_container_width=True,
+                     type="primary" if chat_id == st.session_state.active_chat_id else "secondary"):
+            if st.session_state.get("pending_update") and st.session_state.get("agent_session_id"):
+                call_api("/api/chat/update/cancel", {"project": st.session_state.project,
+                    "session_id": st.session_state.agent_session_id,
+                    "token": st.session_state.pending_update["token"]})
+            switch_chat(st.session_state, chat_id)
+            st.session_state.workspace_section = "Chatbot"
+            st.rerun()
+    st.caption("L\u1ecbch s\u1eed l\u01b0u trong phi\u00ean tr\u00ecnh duy\u1ec7t hi\u1ec7n t\u1ea1i; ch\u01b0a \u0111\u1ed3ng b\u1ed9 t\u00e0i kho\u1ea3n.")
+    with st.expander("C\u00f4ng c\u1ee5 & c\u00e0i \u0111\u1eb7t", expanded=False):
+        section = st.radio(
+            "Không gian làm việc",
+            ["Chatbot", "Tạo báo cáo", "Báo cáo nâng cao"],
+            key="workspace_section",
+        )
+        st.divider()
+        project = st.selectbox("Dự án chatbot", options=["demo_project"], index=0)
+        st.session_state.project = project
+        if section == "Chatbot" and st.checkbox("Thêm nguồn cho chatbot / RAG", key="show_chat_upload"):
+            with st.container(border=True):
+                st.caption("Tệp sẽ được lưu làm nguồn của dự án; không ghi đè tệp trùng tên. Các đoạn truy xuất có thể được gửi lên OpenAI.")
+                uploaded_source = st.file_uploader("Nguồn Excel/CSV", type=["xlsx", "csv"], key="chat_source_upload")
+                if st.button("Lưu làm nguồn chatbot", key="save_chat_source", disabled=not online or uploaded_source is None):
+                    try:
+                        upload_result = requests.post(f"{API_BASE}/api/chat/sources/upload", data={"project": project},
+                            files={"file": (uploaded_source.name, uploaded_source.getvalue())}, timeout=60)
+                        upload_result.raise_for_status()
+                        st.success("Đã thêm nguồn. Chỉ mục sẽ được tạo/làm mới khi tra cứu.")
+                    except requests.RequestException:
+                        st.error("Không thể thêm nguồn; kiểm tra tên tệp trùng, định dạng hoặc giới hạn 20 tệp / 40 MB.")
 
-    if st.session_state.get("ai_planner_enabled", False):
-        st.caption("OpenAI + RAG: truy xuất Excel cục bộ; các đoạn bằng chứng liên quan được gửi lên OpenAI để trả lời có dẫn nguồn.")
-        if not planner_info.get("configured"):
-            st.warning("Chưa cấu hình OPENAI_API_KEY trong backend / Streamlit Secrets.")
-    else:
-        st.caption("Đang dùng bộ quy tắc offline. Cấu hình OPENAI_API_KEY để bật AI agent, sau đó Reboot app.")
-
-    st.caption("File upload trong công cụ báo cáo được xử lý riêng, không tự thêm vào nguồn chatbot.")
-    st.checkbox("Tự động tạo báo cáo khi yêu cầu rõ ràng", value=True, disabled=st.session_state.get("ai_planner_enabled", False), key="auto_reports")
-    st.caption("Chỉ hỏi lại khi nguồn hoặc phép tính còn mơ hồ. Tắt để xem và xác nhận kế hoạch trước khi xuất.")
-    if st.button("↻ Làm mới kết nối & file", key="refresh_workspace", use_container_width=True):
-        _load_download_data.clear()
-        st.rerun()
-
-    # File browsing is loaded only when explicitly requested, not on every chat rerun.
-    if st.checkbox("Mở thư viện file dự án", key="show_project_files"):
-        if not online:
-            st.info("Kết nối backend để xem file dự án.")
+        if st.session_state.get("ai_planner_enabled", False):
+            st.caption("OpenAI + RAG: truy xuất Excel cục bộ; các đoạn bằng chứng liên quan được gửi lên OpenAI để trả lời có dẫn nguồn.")
+            if not planner_info.get("configured"):
+                st.warning("Chưa cấu hình OPENAI_API_KEY trong backend / Streamlit Secrets.")
         else:
-            input_files = get_file_list("input")
-            output_files = get_file_list("output")
-            with st.expander(f"Nguồn dữ liệu · {len(input_files)}", expanded=True):
-                if not input_files:
-                    st.caption("Chưa có file nguồn.")
-                for f in input_files:
-                    st.write(f"📄 {f.get('name', '')}")
-                    st.caption(f.get("size", ""))
-            with st.expander(f"Kết quả · {len(output_files)}"):
-                selected_name = st.selectbox(
-                    "Chọn kết quả để tải", [f.get("name", "") for f in output_files],
-                    key="selected_output_file",
-                ) if output_files else None
-                if selected_name:
-                    _render_download_button(selected_name, project=project, key="sidebar_selected_download")
-                else:
-                    st.caption("Chưa có file kết quả.")
-    st.divider()
-    st.caption("RULE-BASED ENGINE · Không sử dụng LLM")
-    st.caption(f"Phiên làm việc: {st.session_state.session_id[:8]}")
-    st.caption("Dữ liệu phiên không thay thế kho lưu trữ. Hãy tải kết quả trước khi đóng ứng dụng.")
+            st.caption("Đang dùng bộ quy tắc offline. Cấu hình OPENAI_API_KEY để bật AI agent, sau đó Reboot app.")
+
+        st.caption("File upload trong công cụ báo cáo được xử lý riêng, không tự thêm vào nguồn chatbot.")
+        st.checkbox("Tự động tạo báo cáo khi yêu cầu rõ ràng", value=True, disabled=st.session_state.get("ai_planner_enabled", False), key="auto_reports")
+        st.caption("Chỉ hỏi lại khi nguồn hoặc phép tính còn mơ hồ. Tắt để xem và xác nhận kế hoạch trước khi xuất.")
+        if st.button("↻ Làm mới kết nối & file", key="refresh_workspace", use_container_width=True):
+            _load_download_data.clear()
+            st.rerun()
+
+        # File browsing is loaded only when explicitly requested, not on every chat rerun.
+        if st.checkbox("Mở thư viện file dự án", key="show_project_files"):
+            if not online:
+                st.info("Kết nối backend để xem file dự án.")
+            else:
+                input_files = get_file_list("input")
+                output_files = get_file_list("output")
+                with st.container(border=True):
+                    if not input_files:
+                        st.caption("Chưa có file nguồn.")
+                    for f in input_files:
+                        st.write(f"📄 {f.get('name', '')}")
+                        st.caption(f.get("size", ""))
+                with st.container(border=True):
+                    selected_name = st.selectbox(
+                        "Chọn kết quả để tải", [f.get("name", "") for f in output_files],
+                        key="selected_output_file",
+                    ) if output_files else None
+                    if selected_name:
+                        _render_download_button(selected_name, project=project, key="sidebar_selected_download")
+                    else:
+                        st.caption("Chưa có file kết quả.")
 
 # ──────────────────────────────────────────────────────────────
 #  MAIN AREA
@@ -550,6 +561,7 @@ else:
                 confirm_clear = st.checkbox("Xác nhận xóa lịch sử phiên", key="confirm_clear_chat")
                 if st.button("Xóa hội thoại", disabled=not confirm_clear, key="clear_chat"):
                     st.session_state.pending_report = None
+                    st.session_state.get("chat_threads", {}).pop(st.session_state.get("active_chat_id"), None)
                     st.session_state.messages = []
                     st.session_state.agent_session_id = None
                     st.session_state.pending_update = None

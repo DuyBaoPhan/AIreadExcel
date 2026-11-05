@@ -81,3 +81,17 @@ class TestChatbotWorkspace(unittest.TestCase):
         self.assertEqual(app.session_state['messages'], [])
         self.assertIsNone(app.session_state['agent_session_id'])
         self.assertIsNone(app.session_state['pending_report'])
+
+    def test_sidebar_restores_multiple_conversations(self):
+        app = AppTest.from_string(SCRIPT).run(timeout=30)
+        app.session_state['messages'] = [{'role': 'user', 'content': 'First report', 'metadata': {}}]
+        app.button(key='new_chat').click().run(timeout=30)
+        threads=app.session_state['chat_threads']
+        first=next(iter(threads))
+        app.session_state['messages'] = [{'role': 'user', 'content': 'Second report', 'metadata': {}}]
+        app.button(key='new_chat').click().run(timeout=30)
+        self.assertEqual(len(app.session_state['chat_threads']),2)
+        app.button(key=f'history_{first}').click().run(timeout=30)
+        self.assertEqual(len(app.exception),0)
+        self.assertEqual(app.session_state['messages'][0]['content'],'First report')
+        self.assertIsNone(app.session_state['pending_update'])
