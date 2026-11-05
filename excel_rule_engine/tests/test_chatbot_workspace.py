@@ -61,3 +61,23 @@ class TestChatbotWorkspace(unittest.TestCase):
         app.checkbox(key='confirm_clear_chat').check().run(timeout=30)
         app.button(key='clear_chat').click().run(timeout=30)
         self.assertEqual(app.session_state['messages'], [])
+
+    def test_rag_upload_is_explicit_and_chatbot_only(self):
+        app = AppTest.from_string(SCRIPT).run(timeout=30)
+        self.assertEqual(len(app.get('file_uploader')), 0)
+        app.checkbox(key='show_chat_upload').check().run(timeout=30)
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(len(app.get('file_uploader')), 1)
+        app.radio(key='workspace_section').set_value('T\u1ea1o b\u00e1o c\u00e1o').run(timeout=30)
+        self.assertEqual(len(app.get('file_uploader')), 1)
+
+    def test_new_chat_resets_context_and_pending_operations(self):
+        app = AppTest.from_string(SCRIPT).run(timeout=30)
+        app.session_state['messages'] = [{'role': 'user', 'content': 'old', 'metadata': {}}]
+        app.session_state['agent_session_id'] = 'old-agent'
+        app.session_state['pending_report'] = {'status': 'clarify', 'text': 'old', 'project': 'demo_project'}
+        app.button(key='new_chat').click().run(timeout=30)
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(app.session_state['messages'], [])
+        self.assertIsNone(app.session_state['agent_session_id'])
+        self.assertIsNone(app.session_state['pending_report'])

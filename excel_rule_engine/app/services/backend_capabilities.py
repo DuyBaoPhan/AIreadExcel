@@ -1,7 +1,7 @@
 """Public API capability checks; never terminate or replace an unknown server."""
 import requests
 
-REQUIRED_REPORT_ROUTES = ('/api/report/preview', '/api/report/confirm', '/api/report/auto')
+REQUIRED_REPORT_ROUTES = ('/api/report/preview', '/api/report/confirm', '/api/report/auto', '/api/chat', '/api/chat/update/confirm')
 
 
 def check_report_api(base_url='http://127.0.0.1:8000'):

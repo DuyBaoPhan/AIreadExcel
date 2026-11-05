@@ -18,6 +18,10 @@ os.chdir(PROJECT_DIR)
 sys.path.insert(0, str(PROJECT_DIR))
 
 
+from app.services.environment import load_environment
+load_environment()
+
+
 def main():
     # Fix encoding cho console Windows
     if sys.platform == "win32":

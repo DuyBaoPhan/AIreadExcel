@@ -6,7 +6,7 @@ from app.services.backend_capabilities import check_report_api
 
 
 @pytest.mark.parametrize('paths,compatible', [
-    ({'/api/report/preview': {'post': {}}, '/api/report/confirm': {'post': {}}, '/api/report/auto': {'post': {}}}, True),
+    ({'/api/report/preview': {'post': {}}, '/api/report/confirm': {'post': {}}, '/api/report/auto': {'post': {}}, '/api/chat': {'post': {}}, '/api/chat/update/confirm': {'post': {}}}, True),
     ({'/health': {'get': {}}}, False),
     ({'/api/report/preview': {'get': {}}, '/api/report/confirm': {'post': {}}}, False),
 ])

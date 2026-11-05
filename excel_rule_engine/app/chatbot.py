@@ -25,8 +25,8 @@ API_BASE = "http://localhost:8000"
 DEFAULT_PROJECT = "demo_project"
 
 st.set_page_config(
-    page_title="Excel Studio | Data workspace",
-    page_icon="📊",
+    page_title="Excel Assistant",
+    page_icon="💬",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -50,13 +50,17 @@ if "project" not in st.session_state:
 
 def call_api(endpoint: str, payload: dict) -> dict | None:
     try:
-        resp = requests.post(f"{API_BASE}{endpoint}", json=payload, timeout=30)
+        resp = requests.post(f"{API_BASE}{endpoint}", json=payload, timeout=150)
         resp.raise_for_status()
         return resp.json()
     except requests.ConnectionError:
         return {"error": "❌ Không thể kết nối với API server. Hãy chắc chắn FastAPI đang chạy tại port 8000."}
     except requests.HTTPError as e:
-        return {"error": f"❌ Lỗi HTTP {e.response.status_code}: {e.response.text}"}
+        try:
+            detail = e.response.json().get("detail")
+        except (ValueError, AttributeError):
+            detail = None
+        return {"error": detail if isinstance(detail, str) else f"HTTP {e.response.status_code}: Khong the xu ly yeu cau."}
     except Exception as e:
         return {"error": f"❌ Lỗi không xác định: {e}"}
 
@@ -88,7 +92,7 @@ def render_message(msg: dict, message_index: int = 0):
     content = msg["content"]
     meta = msg.get("metadata", {})
 
-    with st.chat_message(role, avatar="🧑‍💻" if role == "user" else "⚡"):
+    with st.chat_message(role):
         st.markdown(content)
 
         if meta.get("intent_display"):
@@ -108,14 +112,21 @@ def render_message(msg: dict, message_index: int = 0):
         if meta.get('summary'):
             st.dataframe(meta['summary'], use_container_width=True)
         if meta.get('detail_preview'):
-            st.caption(f"Xem trước tối đa 50 dòng / {meta.get('total_rows', '?')} dòng phù hợp. File Excel chứa toàn bộ kết quả.")
+            st.caption(f"Xem truoc toi da 50 dong / {meta.get('total_rows', '?')} dong phu hop.")
             st.dataframe(meta['detail_preview'], use_container_width=True)
+
+        if meta.get("citations"):
+            with st.expander("Nguồn bằng chứng"):
+                for citation in meta["citations"]:
+                    st.write(f"[{citation['number']}] {citation['source']} · sheet {citation['sheet']} · dòng {citation['row']}")
+                    st.text(citation['text'])
 
         if meta.get("file_list"):
             _render_file_list(meta["file_list"])
 
         if meta.get("warnings"):
-            for w in meta["warnings"]:
+            from app.services.chat_presentation import visible_chat_warnings
+            for w in visible_chat_warnings(meta["warnings"]):
                 st.warning(w)
 
 
@@ -156,6 +167,24 @@ def process_command(user_text: str):
     """Gửi lệnh tới API và xử lý phản hồi."""
     st.session_state.pending_report = None
     add_message("user", user_text)
+
+    if st.session_state.get("ai_planner_enabled", False):
+        st.session_state.pending_update = None
+        with st.spinner("Dang trao doi voi tro ly..."):
+            response = call_api("/api/chat", {"text": user_text, "project": st.session_state.project,
+                "session_id": st.session_state.get("agent_session_id")})
+        if not response or response.get("error"):
+            add_message("assistant", str((response or {}).get("error", "Khong co phan hoi.")))
+            return
+        st.session_state.agent_session_id = response["session_id"]
+        result = response.get("result") or {}
+        add_message("assistant", response.get("reply", ""), {
+            "project": st.session_state.project, "applied_filters": result.get("applied_filters"), "citations": response.get("citations", []), "output_path": result.get("output_path"),
+            "summary": result.get("summary", []), "detail_preview": result.get("detail_preview", []),
+            "total_rows": result.get("total_rows"), "warnings": result.get("warnings", [])})
+        if response.get("update_proposal"):
+            st.session_state.pending_update = response["update_proposal"]
+        return
 
     from app.core.analytical_request import is_analytical_request
     if is_analytical_request(user_text):
@@ -391,8 +420,28 @@ def backend_online() -> bool:
 
 
 online = backend_online()
+# Read server mode: AI routing must not be gated by keyword detection.
+try:
+    planner_info = requests.get(f"{API_BASE}/api/planner/status", timeout=3).json() if online else {}
+except (requests.RequestException, ValueError):
+    planner_info = {}
+st.session_state.ai_planner_enabled = planner_info.get("planner") == "openai"
+
 with st.sidebar:
     render_sidebar_brand()
+    if st.button("＋ Cuộc trò chuyện mới", key="new_chat", use_container_width=True):
+        if st.session_state.get("pending_update") and st.session_state.get("agent_session_id"):
+            call_api("/api/chat/update/cancel", {"project": st.session_state.project,
+                "session_id": st.session_state.agent_session_id,
+                "token": st.session_state.pending_update["token"]})
+        st.session_state.messages = []
+        st.session_state.agent_session_id = None
+        st.session_state.pending_update = None
+        st.session_state.pending_report = None
+        st.session_state.pending_comparison = None
+        st.session_state.session_id = str(uuid.uuid4())
+        st.rerun()
+
     section = st.radio(
         "Không gian làm việc",
         ["Chatbot", "Tạo báo cáo", "Báo cáo nâng cao"],
@@ -401,8 +450,28 @@ with st.sidebar:
     st.divider()
     project = st.selectbox("Dự án chatbot", options=["demo_project"], index=0)
     st.session_state.project = project
+    if section == "Chatbot" and st.checkbox("Thêm nguồn cho chatbot / RAG", key="show_chat_upload"):
+        with st.expander("Thêm Excel làm nguồn chatbot / RAG"):
+            st.caption("Tệp sẽ được lưu làm nguồn của dự án; không ghi đè tệp trùng tên. Các đoạn truy xuất có thể được gửi lên OpenAI.")
+            uploaded_source = st.file_uploader("Nguồn Excel/CSV", type=["xlsx", "csv"], key="chat_source_upload")
+            if st.button("Lưu làm nguồn chatbot", key="save_chat_source", disabled=not online or uploaded_source is None):
+                try:
+                    upload_result = requests.post(f"{API_BASE}/api/chat/sources/upload", data={"project": project},
+                        files={"file": (uploaded_source.name, uploaded_source.getvalue())}, timeout=60)
+                    upload_result.raise_for_status()
+                    st.success("Đã thêm nguồn. Chỉ mục sẽ được tạo/làm mới khi tra cứu.")
+                except requests.RequestException:
+                    st.error("Không thể thêm nguồn; kiểm tra tên tệp trùng, định dạng hoặc giới hạn 20 tệp / 40 MB.")
+
+    if st.session_state.get("ai_planner_enabled", False):
+        st.caption("OpenAI + RAG: truy xuất Excel cục bộ; các đoạn bằng chứng liên quan được gửi lên OpenAI để trả lời có dẫn nguồn.")
+        if not planner_info.get("configured"):
+            st.warning("Chưa cấu hình OPENAI_API_KEY trong backend / Streamlit Secrets.")
+    else:
+        st.caption("Đang dùng bộ quy tắc offline. Cấu hình OPENAI_API_KEY để bật AI agent, sau đó Reboot app.")
+
     st.caption("File upload trong công cụ báo cáo được xử lý riêng, không tự thêm vào nguồn chatbot.")
-    st.checkbox("Tự động tạo báo cáo khi yêu cầu rõ ràng", value=True, key="auto_reports")
+    st.checkbox("Tự động tạo báo cáo khi yêu cầu rõ ràng", value=True, disabled=st.session_state.get("ai_planner_enabled", False), key="auto_reports")
     st.caption("Chỉ hỏi lại khi nguồn hoặc phép tính còn mơ hồ. Tắt để xem và xác nhận kế hoạch trước khi xuất.")
     if st.button("↻ Làm mới kết nối & file", key="refresh_workspace", use_container_width=True):
         _load_download_data.clear()
@@ -458,12 +527,10 @@ else:
         render_empty_chat()
     with st.expander("Thao tác nhanh · chọn một yêu cầu mẫu", expanded=not st.session_state.messages):
         quick_commands = [
-            ("📂 Xem nguồn dữ liệu", "Liệt kê các file Excel"),
-            ("🔗 Gộp file Excel", "Gộp tất cả file Excel"),
-            ("🔎 Lọc theo mức lương", "Lọc nhân viên có lương trên 10 triệu"),
-            ("⚖️ Đối chiếu thay đổi", "So sánh Root và Update"),
-            ("📊 Báo cáo tổng hợp", "Tạo báo cáo tổng hợp"),
-            ("💡 Hướng dẫn sử dụng", "Hướng dẫn"),
+            ("Khám phá dữ liệu", "Tôi có thể hỏi những gì về dữ liệu hiện có?"),
+            ("Phân tích nhân sự", "Ai có lương cao nhất phòng IT?"),
+            ("Tra cứu có dẫn nguồn", "Các tệp đã cung cấp có thông tin gì?"),
+            ("Hướng dẫn sử dụng", "Hướng dẫn tôi cách hỏi dữ liệu và xuất báo cáo."),
         ]
         quick_cols = st.columns(2)
         for i, (label, command) in enumerate(quick_commands):
@@ -484,14 +551,35 @@ else:
                 if st.button("Xóa hội thoại", disabled=not confirm_clear, key="clear_chat"):
                     st.session_state.pending_report = None
                     st.session_state.messages = []
+                    st.session_state.agent_session_id = None
+                    st.session_state.pending_update = None
                     st.session_state.pending_comparison = None
                     st.rerun()
     # Hiển thị lịch sử chat
     for message_index, msg in enumerate(st.session_state.messages):
         render_message(msg, message_index)
     render_pending_report(call_api, add_message)
+    pending_update = st.session_state.get("pending_update")
+    if pending_update:
+        with st.container(border=True):
+            st.subheader("Xác nhận sửa trực tiếp tệp nguồn")
+            st.json(pending_update["preview"])
+            st.warning("Chỉ ghi sau khi xác nhận. Hệ thống sẽ lưu bản sao lưu trước khi thay thế tệp.")
+            yes, no = st.columns(2)
+            if yes.button("Xác nhận cập nhật", key="confirm_source_update", type="primary"):
+                outcome = call_api("/api/chat/update/confirm", {"project": st.session_state.project,
+                    "session_id": st.session_state.agent_session_id, "token": pending_update["token"]})
+                add_message("assistant", (outcome or {}).get("reply", (outcome or {}).get("error", "Khong co phan hoi.")))
+                st.session_state.pending_update = None
+                st.rerun()
+            if no.button("Hủy thay đổi", key="cancel_source_update"):
+                call_api("/api/chat/update/cancel", {"project": st.session_state.project,
+                    "session_id": st.session_state.agent_session_id, "token": pending_update["token"]})
+                st.session_state.pending_update = None
+                st.rerun()
+
     # Chat input
-    placeholder = "Nhập tên cột khóa, ví dụ employee_id…" if st.session_state.pending_comparison else "Bạn muốn xử lý dữ liệu như thế nào? Ví dụ: lọc nhân viên có lương trên 10 triệu…"
+    placeholder = "Nhập tên cột khóa, ví dụ employee_id." if st.session_state.pending_comparison else "Hỏi về dữ liệu hoặc nhắn cho Excel Assistant…"
     if prompt := st.chat_input(placeholder, disabled=not online, key="workspace_chat_input"):
         # Kiểm tra xem có đang chờ primary key không
         if st.session_state.pending_comparison:

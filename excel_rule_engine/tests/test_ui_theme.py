@@ -19,7 +19,7 @@ class TestUITheme(unittest.TestCase):
 
     def test_static_stylesheet_has_no_remote_resources(self):
         css = self.markup(ui_theme.inject_theme)
-        self.assertEqual(css, ui_theme.THEME_CSS)
+        self.assertEqual(css, ui_theme.THEME_CSS + ui_theme.CHAT_CSS)
         for resource in ("@import", "url(", "https://", "http://"):
             self.assertNotIn(resource, css)
         self.assertNotIn("nth-child", css)
@@ -52,6 +52,10 @@ class TestUITheme(unittest.TestCase):
         for section, description in ui_theme._SECTION_DESCRIPTIONS.items():
             with self.subTest(section=section):
                 html = self.markup(ui_theme.render_hero, True, section)
+                if section == "Chatbot":
+                    self.assertIn("Excel Assistant", html)
+                    self.assertIn("Connected", html)
+                    continue
                 self.assertIn(">ONLINE<", html)
                 self.assertIn(description, html)
                 self.assertIn("API đã kết nối", html)
@@ -59,8 +63,9 @@ class TestUITheme(unittest.TestCase):
 
     def test_empty_state_is_information_not_fake_controls(self):
         html = self.markup(ui_theme.render_empty_chat)
-        self.assertEqual(html.count('<article'), 3)
-        self.assertIn("không phải LLM", html)
+        self.assertIn('xl-welcome', html)
+        self.assertIn('x\u00e1c nh\u1eadn', html)
+        self.assertNotIn('kh?ng ph?i LLM', html)
         for control in ('<button', 'role="button"', 'onclick=', '<a ', 'tabindex='):
             self.assertNotIn(control, html)
 

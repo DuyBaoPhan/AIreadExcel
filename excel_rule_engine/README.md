@@ -305,3 +305,69 @@ Kết quả kiểm thử và giới hạn của đợt nâng cấp: [automatic_r
 Dự án có thể khai báo `source_policy.json` cạnh thư mục `input`, với `version: 1` và bảng `department_sources` ánh xạ tên phòng ban sang tên tệp chính xác. Đây là cấu hình nghiệp vụ rõ ràng, không phải suy đoán tên tệp. Dự án demo đã khai báo IT → Employees_IT.xlsx; HR/Accounting/Sales/Marketing/Finance → Employees_Business.xlsx; Warehouse/Production/Admin/Engineering → Employees_Operations.xlsx.
 
 Quy tắc chỉ áp dụng khi câu hỏi đã được phân tích thành điều kiện phòng ban bằng chính xác và nguồn được cấu hình nằm trong các nguồn phù hợp. Người dùng chỉ rõ tệp sẽ ghi đè ưu tiên này. Cấu hình thiếu hoặc tệp không còn tồn tại không dẫn đến tự gộp/chọn nguồn khác; cấu hình hỏng được báo lỗi. Câu hỏi toàn công ty vẫn cần một nguồn chính được xác định riêng; không tự coi Root hoặc Update là nguồn chính.
+
+## OpenAI agent — understanding without keyword routing
+
+When `OPENAI_API_KEY` is configured, `REPORT_PLANNER=auto` selects OpenAI. All chatbot requests then go to the AI planner, not the keyword intent parser. Python still executes validated reports; the model cannot run code, access arbitrary files or calculate authoritative results itself.
+
+### Streamlit Cloud
+
+In **Manage app → Settings → Secrets**, add:
+
+```toml
+OPENAI_API_KEY = "your-key-here"
+OPENAI_MODEL = "gpt-4.1-mini"
+REPORT_PLANNER = "openai"
+```
+
+Never commit the real key or send it in chat. Publish the code to the app branch and **Reboot app**. The entrypoint passes only these documented settings to the backend subprocess. The sidebar shows whether AI or offline rules are active. The model must support strict JSON-schema structured outputs; change `OPENAI_MODEL` if needed for your account.
+
+Local PowerShell: set these as environment variables in the terminal used to launch the application. The repository-root `.env` is loaded automatically at startup using python-dotenv; existing process environment variables take precedence. Copy `.env.example` to `.env` when setting up a new checkout.
+
+- `REPORT_PLANNER=auto`: OpenAI if a key exists, otherwise explicit offline rules mode.
+- `REPORT_PLANNER=openai`: require the key, never silently fall back if API fails.
+- `REPORT_PLANNER=rules`: explicitly use the existing offline implementation.
+
+### Privacy, boundaries and reliability
+
+OpenAI receives the current request, source filenames, row counts, column names/types and configured department priorities. **No cell values or sample rows are uploaded.** Text the user enters may itself contain personal information; do not enter secrets or sensitive details into requests. Filenames and column names can also be sensitive metadata. There is no multi-turn conversational memory in this version: include all required conditions in each request.
+
+The agent supports filters, aggregation, grouping, date grouping and ranking through a strict structured plan. Other operations (joins, arbitrary formulas, forecasts, destructive changes) are not silently approximated. It asks when source authority or intent is unclear. Metadata-only mode cannot discover values or infer date coverage from rows; an unknown value can produce no matches, not an invented result.
+
+Every ready plan is checked for schema, available source/columns, safe config and numeric evidence. The engine enforces resource limits. There is one bounded API call per planning request, no automatic retries; 45-second provider timeout, output token limit 4,000. Provider billing applies. Manual approval caches the exact validated plan server-side for 15 minutes (up to 128 entries); confirmation rereads/verifies the source snapshot without a second AI plan. Backend restart expires pending AI approvals.
+
+Automated tests mock the provider and verify local contracts/privacy/error handling; they do **not** measure a real model's language accuracy. Before production, run a separately reviewed evaluation with your configured key/model and representative data. Structural validation cannot prove that every user condition was interpreted correctly.
+
+### Conversational mode and direct updates
+
+In OpenAI mode the main chatbot now uses `/api/chat`: greetings/advice return conversation, data questions return locally computed tables without creating a workbook, and only an explicit export action creates a file. The server keeps up to 12 message entries per session for one hour (128 sessions maximum). Resolved requests, not computed rows, are sent as context for follow-ups. Planning a data turn can make two provider calls (routing and validated report planning), unlike the legacy one-call reporting endpoint. Provider billing applies to each call.
+
+Direct updates are opt-in per operation: the assistant proposes one cell change identified by exact source and record key; the UI displays old/new values. **Only the confirmation button writes the source**. Text such as “yes” never confirms a write. XLSX first-sheet updates preserve other sheets and ordinary formatting using openpyxl; CSV updates require string cell values. Formulas, key changes, duplicate keys, unknown columns, bulk updates, row insertion/deletion and unsupported formats are rejected. A source byte fingerprint is checked before replacement; an exact original backup is created before an atomic file replacement. Pending tokens expire after five minutes or backend restart.
+
+The backup is kept alongside the source with a non-input backup extension. Backups contain sensitive source data: protect them like originals and define a retention policy. Excel workbooks with advanced features may not round-trip perfectly in openpyxl; validate compatibility before enabling production edits. Cloud filesystem changes/backups are not durable storage and may disappear on reboot/redeploy.
+
+**Deployment security:** the current app has no user authentication/authorization. Confirmation and session tokens are consistency safeguards, not user identity or access control. Do not publish a source-editing app with sensitive data to untrusted users; add authentication, project-level write permissions and durable audit/storage before production multi-user deployment. The local backend remains bound to loopback. No source data was modified during implementation; tests use isolated fixtures.
+
+## Hybrid RAG over uploaded spreadsheets
+
+The AI router distinguishes factual/qualitative lookup (`retrieve`) from full-table calculation (`query`). Retrieval combines local **intfloat/multilingual-e5-large** embeddings with **FAISS** cosine search and **BM25** lexical ranking, fused by reciprocal rank fusion. Exact record codes benefit from lexical search; paraphrases benefit from multilingual embeddings. Retrieval is not a completeness guarantee.
+
+`requirements.txt` includes `requirements-rag.txt`. The embedding model is loaded lazily; the first lookup downloads model weights through the normal Hugging Face mechanism. This is a large model: allow several GB for download/runtime, expect CPU startup latency, and verify your hosting RAM before deploying. `RAG_MODEL_PATH` may point to a predownloaded local model. No lightweight substitute is silently selected. Streamlit Cloud resources may be insufficient; use a backend with adequate RAM if needed.
+
+Indexing scans the project's chatbot `input` directory, not unrelated files processed privately in report wizards. Supported workbooks include every sheet. Records are tied to exact source/sheet/row provenance. Limits reject unsupported or excessive inputs explicitly rather than claim an incomplete index is complete. Index snapshots are project-isolated, bounded, in memory, and fingerprinted from input bytes. Add/change/delete source files and subsequent searches rebuild the index; direct edits are not answered using the previous index. No pickle deserialization or external vector service is used.
+
+**Privacy change:** retrieval embeddings remain local, but the relevant cell excerpts and source references ARE sent to OpenAI to produce a grounded answer. This supersedes the schema-only promise for retrieval turns; structured report planning still uses metadata only. Treat source cells as untrusted data, not instructions. Do not use sensitive workbooks with this path unless provider processing is approved. Access control must be enforced before indexing/retrieval in a production multi-user deployment.
+
+Answers are concise and cited to retrieved evidence. Unknown citation IDs / claims without references are rejected; missing evidence is reported rather than replaced by generic advice. Citation validation checks references, not semantic truth: the model may still misinterpret evidence. Top-k retrieval cannot establish full-dataset totals, counts, maxima or exhaustive lists; those stay in the Python report engine. Conflicting snapshots are not automatically merged or assigned authority.
+
+### Adding files to the chatbot knowledge base
+
+Use sidebar **Thêm Excel làm nguồn chatbot / RAG → Lưu làm nguồn chatbot**. This is explicit upload into the project input directory, refuses overwriting an existing name, and validates file type/size. Files uploaded earlier only to report wizards are not automatically retained as chatbot sources; upload them here to make them searchable. Existing project input files are indexed automatically on lookup.
+
+Current retrieval limits: 20 input files, 40 MB total raw bytes, 200 MB expanded XLSX bytes, 20,000 data rows, 256 columns, 12,000 characters per row and 512 actual E5 tokens including prefix. A long row/query is explicitly rejected rather than silently truncated. Convert legacy XLS to XLSX. Formula cells are indexed as formula text (not freshly calculated results). The first row of each sheet is treated as a header; verify irregular worksheets before use. Indexes are in-memory FAISS stores and rebuild on process restart; model weights use the normal local model cache.
+
+## Contextual report filenames
+
+Conversational exports (automatic and manual approval) derive filenames from validated report configuration: measures/operations, grouping, ranking/position, department code and date/month/quarter/year ranges. Example: `Bao_cao_doanh_thu_2024-10__<unique-id>.xlsx`. Query-only turns do not create files. Download uses the actual output basename, so the descriptive name is retained.
+
+Names are ASCII/Windows-safe and length-bounded; device names and separators are excluded. A full random UUID suffix plus exclusive file creation prevents overwriting existing outputs. Names do not use arbitrary model aliases, source filenames or row-level personal/salary filter values. Unknown columns use a generic business label. This does not add free-form user-specified names or change legacy standalone wizard naming.

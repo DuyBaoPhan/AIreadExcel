@@ -5,7 +5,7 @@ import hashlib
 import hmac
 import json
 from pathlib import Path
-from uuid import uuid4
+from app.services.report_naming import report_filename
 
 
 from app.services.advanced_report_export import build_advanced_report_bytes
@@ -14,6 +14,7 @@ from app.services.report_builder import read_uploaded_table
 from app.services.report_engine import run_report, serialize_config
 from app.core.report_planner import plan_report
 from app.services.source_policy import apply_source_policy
+from app.services.planner_settings import planner_mode
 
 MAX_SOURCE_FILES = 20
 MAX_SOURCE_BYTES = 40 * 1024 * 1024
@@ -61,9 +62,26 @@ def _preview(input_dir: Path, text: str, source_name: str | None):
     if not isinstance(text, str) or not text.strip():
         raise ValueError('Vui long nhap yeu cau bao cao.')
     sources, snapshots, names, warnings = _load_sources(input_dir, source_name)
-    plan = dict(plan_report(text, sources))
-    if source_name is None:
-        plan = apply_source_policy(input_dir, text, sources, plan)
+    if planner_mode() == 'openai':
+        from app.services.openai_planner import plan_with_openai
+        policy_path = Path(input_dir).parent / 'source_policy.json'
+        policy = None
+        if policy_path.exists():
+            if policy_path.stat().st_size > 64 * 1024:
+                raise ValueError('Source policy exceeds 64 KB.')
+            try:
+                policy = json.loads(policy_path.read_text(encoding='utf-8-sig'))
+            except (ValueError, OSError) as exc:
+                raise ValueError('Cau hinh nguon khong hop le.') from exc
+        if source_name is not None and isinstance(policy, dict) and isinstance(policy.get('department_sources'), dict):
+            policy = {**policy, 'department_sources': {k: v for k, v in policy['department_sources'].items() if v in sources}}
+        plan = dict(plan_with_openai(text, sources, source_policy=policy))
+        plan['planner'] = 'openai'
+    else:
+        plan = dict(plan_report(text, sources))
+        if source_name is None:
+            plan = apply_source_policy(input_dir, text, sources, plan)
+        plan['planner'] = 'rules'
     plan.update(available_sources=names, warnings=warnings)
     plan.pop('fingerprint', None)
     if plan.get('status') == 'ready':
@@ -86,6 +104,9 @@ def _preview(input_dir: Path, text: str, source_name: str | None):
         digest.update(canonical)
         digest.update(snapshots[source])
         plan['fingerprint'] = digest.hexdigest()
+        if plan.get('planner') == 'openai':
+            from app.services.ai_approval import remember
+            remember(input_dir, text, plan, snapshots)
     return plan, sources
 
 
@@ -137,7 +158,14 @@ def _evidence_warnings(result: dict, config: dict) -> list[str]:
 def execute_request(input_dir: Path, project_name: str, text: str,
                     source_name: str | None, fingerprint: str) -> dict:
     """Replan from fresh bytes and execute only the exact approved snapshot/config."""
-    plan, sources = _preview(input_dir, text, source_name)
+    if planner_mode() == 'openai':
+        from app.services.ai_approval import approved
+        sources, snapshots, _, _ = _load_sources(input_dir, source_name)
+        plan = approved(input_dir, text, source_name, fingerprint, snapshots)
+        if plan is None:
+            raise ValueError('Ke hoach AI khong con trong phien; vui long phan tich lai.')
+    else:
+        plan, sources = _preview(input_dir, text, source_name)
     if plan.get('status') != 'ready':
         raise ValueError('Yeu cau chua san sang; hay xem va xac nhan ke hoach truoc.')
     if source_name is not None and plan['source'] != source_name:
@@ -163,7 +191,7 @@ def automatic_request(input_dir: Path, project_name: str, text: str,
 
 
 def _render_report(plan: dict, sources: dict, project_name: str,
-                   source_name: str | None) -> dict:
+                   source_name: str | None, export: bool = True) -> dict:
     """Render only validated, evidence-backed snapshots, never the raw input files."""
     if (not isinstance(project_name, str) or not project_name or
             project_name in {'.', '..'} or any(c in project_name for c in '/\\:')):
@@ -176,18 +204,21 @@ def _render_report(plan: dict, sources: dict, project_name: str,
     except (KeyError, TypeError, OverflowError) as exc:
         raise ValueError('Du lieu hoac cau hinh khong hop le de tao bao cao.') from exc
     result['warnings'] = warnings
-    blob = build_advanced_report_bytes(result, config)
+    blob = build_advanced_report_bytes(result, config) if export else None
     records = json.loads(result['summary'].to_json(orient='records', date_format='iso'))
     detail_preview = (json.loads(result['data'].head(50).to_json(orient='records', date_format='iso'))
                       if not config.get('metrics') and not config.get('pivot') else [])
     # Render and serialize fully before creating a unique output.
-    output = safe_output_path(project_name, f'planned_report_{uuid4().hex}.xlsx')
-    with output.open('xb') as stream:
-        stream.write(blob)
-    return {'output_path': str(output), 'report_type': 'planned',
+    output = None
+    if export:
+        output = safe_output_path(project_name, report_filename(config, list(sources[plan['source']].columns)))
+        with output.open('xb') as stream:
+            stream.write(blob)
+    return {'output_path': str(output) if output else None, 'output_filename': output.name if output else None, 'report_type': 'planned',
             'detail_preview': detail_preview,
             'total_rows': len(result['data']), 'files_included': 1,
             'source_file': plan['source'], 'summary': records,
+            'planner': plan.get('planner', 'rules'),
             'selection_reason': plan.get('selection_reason', ''),
             'candidate_sources': plan.get('candidate_sources', [plan['source']]),
             'source_selection': {'mode': 'explicit' if source_name is not None else 'automatic',

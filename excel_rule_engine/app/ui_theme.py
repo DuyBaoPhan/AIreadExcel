@@ -199,6 +199,51 @@ input::placeholder, textarea::placeholder { color: #afbed3; opacity: 1; }
 """
 
 
+# Neutral chat-first overrides retain native Streamlit keyboard/accessibility controls.
+CHAT_CSS = """
+<style>
+:root { --xl-bg:#212121; --xl-panel:#292929; --xl-panel-soft:#303030;
+--xl-border:#424242; --xl-text:#ececec; --xl-muted:#b4b4b4; --xl-cyan:#a8dfc7; }
+[data-testid="stAppViewContainer"] { background:#212121; }
+[data-testid="stHeader"] { background:#212121e8; }
+[data-testid="stSidebar"] { background:#171717; border-right:1px solid #282828; }
+[data-testid="stMainBlockContainer"] { max-width:920px; padding-top:1.4rem; padding-bottom:5rem; }
+[data-testid="stChatMessage"] { background:transparent; border:0; border-radius:0; padding:1.2rem .25rem; }
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
+background:#303030; border-radius:1.5rem; margin-left:auto; width:fit-content; max-width:88%; padding:.9rem 1.2rem;
+}
+[data-testid="stChatMessageContent"] { line-height:1.75; }
+[data-testid="stChatInput"] { background:#303030; border:1px solid #494949; border-radius:1.65rem; padding:.35rem .6rem; }
+[data-testid="stChatInput"] textarea { background:transparent; }
+[data-testid="stBottom"] > div { background:#212121; }
+[data-testid="stButton"] button, [data-testid="stDownloadButton"] button {
+background:#292929; border:1px solid #454545; color:#ececec; border-radius:.8rem;
+}
+[data-testid="stButton"] button:hover { background:#373737; border-color:#777; }
+[data-testid="stButton"] button[kind="primary"] { background:#ececec; color:#171717; border-color:#ececec; }
+[data-testid="stRadio"] label { background:transparent; border:0; border-radius:.6rem; }
+[data-testid="stRadio"] label:has(input:checked) { background:#303030; border:0; }
+[data-testid="stExpander"] { background:transparent; border-color:#3d3d3d; }
+[data-testid="stFileUploaderDropzone"], [data-baseweb="select"] > div,
+[data-testid="stTextInput"] input { background:#292929; border-color:#454545; }
+.xl-brand { margin:.25rem 0 1rem; }
+.xl-brand-mark { background:#ececec; color:#202020; border-radius:.7rem; width:2.2rem; height:2.2rem; }
+.xl-brand small { letter-spacing:.02em; }
+.xl-chat-top { display:flex; justify-content:space-between; align-items:center; padding:.4rem 0 1rem; margin-bottom:.5rem; }
+.xl-chat-top strong { font-size:1.15rem; font-weight:600; }
+.xl-chat-status { font-size:.75rem; color:#b4b4b4; }
+.xl-welcome { text-align:center; padding:clamp(2rem,10vh,7rem) 0 1.5rem; }
+.xl-welcome h1 { font-size:clamp(1.8rem,4vw,2.4rem); font-weight:600; letter-spacing:-.045em; }
+.xl-welcome p { color:#b4b4b4; line-height:1.7; max-width:34rem; margin:1rem auto; }
+@media(max-width:700px) {
+[data-testid="stMainBlockContainer"] { padding:1rem .8rem 4rem; }
+.xl-welcome { padding:2.5rem 0 1rem; }
+[data-testid="stChatMessage"] { padding:.9rem 0; }
+}
+</style>
+"""
+
+
 _SECTION_DESCRIPTIONS = {
     "Chatbot": "Xử lý file trong dự án bằng lệnh tiếng Việt: lọc, gộp và đối chiếu. Với file upload riêng, hãy chọn công cụ báo cáo ở thanh bên.",
     "Tạo báo cáo": "Từ dữ liệu thô đến báo cáo rõ ràng. Chọn tệp, thiết lập nội dung và xuất kết quả theo nhu cầu của bạn.",
@@ -208,7 +253,7 @@ _SECTION_DESCRIPTIONS = {
 
 def inject_theme() -> None:
     """Inject a static, local stylesheet without hiding Streamlit controls."""
-    st.markdown(THEME_CSS, unsafe_allow_html=True)
+    st.markdown(THEME_CSS + CHAT_CSS, unsafe_allow_html=True)
 
 
 def render_sidebar_brand() -> None:
@@ -222,6 +267,11 @@ def render_sidebar_brand() -> None:
 
 def render_hero(api_online: bool, section: str) -> None:
     """Render a section-aware hero with an honest API connectivity badge."""
+    if section == "Chatbot":
+        status = "Connected" if api_online else "Offline"
+        st.markdown('<div class="xl-chat-top"><strong>Excel Assistant</strong>'
+                    f'<span class="xl-chat-status">{status}</span></div>', unsafe_allow_html=True)
+        return
     badge = "ONLINE" if api_online else "LOCAL MODE"
     badge_class = "xl-badge" if api_online else "xl-badge xl-badge-local"
     status = "API đã kết nối" if api_online else "API chưa kết nối · Công cụ báo cáo cục bộ vẫn khả dụng"
@@ -250,20 +300,9 @@ def render_section_intro(title: str, description: str) -> None:
 
 def render_empty_chat() -> None:
     """Show informational getting-started cards, not simulated controls."""
-    cards = (
-        ("01 / KẾT NỐI", "Bắt đầu với dữ liệu", "Mở thư viện file dự án để kiểm tra nguồn chatbot. File cá nhân được upload riêng trong công cụ báo cáo."),
-        ("02 / KHÁM PHÁ", "Chọn lệnh phù hợp", "Thử “Lọc nhân viên có lương trên 10 triệu” hoặc chọn thao tác nhanh. Chatbot dùng luật định sẵn, không phải LLM."),
-        ("03 / TẠO KẾT QUẢ", "Biến dữ liệu thành báo cáo", "Chuyển sang Tạo báo cáo hoặc Báo cáo nâng cao để cấu hình và tải Excel. Dữ liệu được xử lý trên máy chủ ứng dụng trong phiên."),
-    )
-    card_html = "".join(
-        '<article class="xl-info-card">'
-        f'<span class="xl-card-number">{escape(number)}</span><h3>{escape(title)}</h3>'
-        f'<p>{escape(description)}</p></article>'
-        for number, title, description in cards
-    )
     st.markdown(
-        '<section class="xl-empty"><h2>Dữ liệu của bạn. Góc nhìn mới.</h2>'
-        '<p>Bắt đầu từ một tệp, khám phá những điều đáng chú ý và tạo kết quả có thể sử dụng.</p>'
-        f'<div class="xl-card-grid">{card_html}</div></section>',
+        '<section class="xl-welcome"><h1>Bạn muốn khám phá điều gì hôm nay?</h1>'
+        '<p>Hỏi về dữ liệu của bạn, tra cứu thông tin có dẫn nguồn, '
+        'hoặc yêu cầu tạo báo cáo. Mọi thay đổi dữ liệu đều cần xác nhận.</p></section>',
         unsafe_allow_html=True,
     )

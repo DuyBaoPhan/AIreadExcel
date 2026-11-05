@@ -4,12 +4,15 @@ FastAPI Main Application - REST API cho Excel Rule Engine.
 
 from __future__ import annotations
 
+from app.services.environment import load_environment
+load_environment()
+
 import logging
 import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -115,6 +118,24 @@ async def handle_command(req: CommandRequest) -> CommandResponse:
     """Nhận câu lệnh tự nhiên, phân tích và thực thi workflow."""
     session_id = req.session_id or str(uuid.uuid4())
     ensure_session(session_id, req.project)
+
+    from app.services.planner_settings import planner_mode
+    if planner_mode() == 'openai':
+        from app.services.chat_conversation import chat
+        task_id = create_task(session_id, "CHAT", req.text)
+        try:
+            # New /api/chat clients retain their server-issued conversational id.
+            outcome = chat(get_input_dir(req.project), req.project, req.text)
+            update_task_status(task_id, "done")
+            return CommandResponse(session_id=session_id, task_id=task_id,
+                intent_display="OpenAI chat agent", workflow_display="Conversation",
+                parsed={"intent": "CHAT", "raw_text": req.text, "parameters": {}},
+                result=outcome)
+        except ValueError as exc:
+            update_task_status(task_id, "failed", error_msg=str(exc))
+            return CommandResponse(session_id=session_id, task_id=task_id,
+                intent_display="OpenAI chat agent", workflow_display="Stopped safely",
+                parsed={}, error=str(exc))
 
     parsed: ParsedCommand = parse_command(req.text)
 
@@ -384,6 +405,67 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "Excel Rule Engine"}
+
+
+@app.get("/api/planner/status")
+def report_planner_status():
+    """Expose mode, never credentials."""
+    from app.services.planner_settings import planner_status
+    try:
+        return planner_status()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class ChatTurnRequest(BaseModel):
+    text: str
+    project: str = "demo_project"
+    session_id: str | None = None
+
+
+class ChatUpdateConfirm(BaseModel):
+    project: str = "demo_project"
+    session_id: str
+    token: str
+
+
+@app.post("/api/chat/sources/upload")
+async def upload_chat_source(project: str = Form("demo_project"), file: UploadFile = File(...)):
+    from app.services.source_uploads import save_source
+    try:
+        raw = await file.read(40 * 1024 * 1024 + 1)
+        return save_source(get_input_dir(project), file.filename, raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        await file.close()
+
+
+@app.post("/api/chat")
+def conversation_turn(req: ChatTurnRequest):
+    from app.services.chat_conversation import chat
+    try:
+        return chat(get_input_dir(req.project), req.project, req.text, req.session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/chat/update/cancel")
+def conversation_update_cancel(req: ChatUpdateConfirm):
+    from app.services.chat_conversation import cancel
+    try:
+        return cancel(get_input_dir(req.project), req.session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/chat/update/confirm")
+def conversation_update_confirm(req: ChatUpdateConfirm):
+    from app.services.chat_conversation import confirm
+    try:
+        return confirm(get_input_dir(req.project), req.session_id, req.token)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 class ReportPlanRequest(BaseModel):
