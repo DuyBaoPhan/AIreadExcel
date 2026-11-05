@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.command_parser import ParsedCommand
-from app.core.intent_router import Intent
+from legacy_nlp.command_parser import ParsedCommand
+from legacy_nlp.intent_router import Intent
 
 
 HELP_TEXT = """

@@ -31,7 +31,7 @@ def plan():
 def test_auto_uses_ai_without_rule_parser_and_exports(workspace):
     source, output = workspace
     with patch('app.services.ai.openai_planner.plan_with_openai', return_value=plan()) as ai, \
-         patch.object(service, 'plan_report', side_effect=AssertionError('no keyword planner')):
+         patch('legacy_nlp.report_planner.plan_report', side_effect=AssertionError('no keyword planner')):
         response = service.automatic_request(source, 'demo', 'cho minh xem cac ban dang lam')
     assert response['status'] == 'ready'
     assert response['result']['planner'] == 'openai'
@@ -63,7 +63,7 @@ def test_changed_data_rejects_approval(workspace):
 def test_api_error_never_falls_back(workspace):
     source, output = workspace
     with patch('app.services.ai.openai_planner.plan_with_openai', side_effect=ValueError('API unavailable')), \
-         patch.object(service, 'plan_report', side_effect=AssertionError('no fallback')):
+         patch('legacy_nlp.report_planner.plan_report', side_effect=AssertionError('no fallback')):
         with pytest.raises(ValueError, match='API unavailable'):
             service.automatic_request(source, 'demo', 'show staff')
     assert not list(output.iterdir())
@@ -72,7 +72,7 @@ def test_api_error_never_falls_back(workspace):
 def test_ai_ui_does_not_require_keyword():
     path = Path(__file__).resolve().parents[1] / 'app/ui/chatbot.py'
     node = next(n for n in ast.parse(path.read_text(encoding='utf-8')).body if isinstance(n, ast.FunctionDef) and n.name == 'process_command')
-    state = {'ai_planner_enabled': True, 'auto_reports': True}
+    state = {'ai_planner_enabled': False, 'auto_reports': True}
     class State:
         project = 'demo'
         def get(self, key, default=None): return state.get(key, default)
@@ -80,7 +80,7 @@ def test_ai_ui_does_not_require_keyword():
     ns = {'st': SimpleNamespace(session_state=State(), spinner=lambda *a: nullcontext()),
           'call_api': api, 'add_message': Mock(), '_handle_requires_input': Mock()}
     exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), 'exec'), ns)
-    with patch('app.core.analytical_request.is_analytical_request', side_effect=AssertionError('keyword gate')):
+    with patch('legacy_nlp.analytical_request.is_analytical_request', side_effect=AssertionError('keyword gate')):
         ns['process_command']('ai dang kiem nhieu tien nhat vay')
     assert api.call_args.args[0] == '/api/chat'
 
@@ -88,18 +88,19 @@ def test_ai_ui_does_not_require_keyword():
 def test_mode_auto_and_explicit(monkeypatch):
     monkeypatch.delenv('REPORT_PLANNER', raising=False)
     monkeypatch.delenv('OPENAI_API_KEY', raising=False)
-    assert planner_mode() == 'rules'
+    assert planner_mode() == 'openai'
     monkeypatch.setenv('OPENAI_API_KEY', 'test')
     assert planner_mode() == 'openai'
     monkeypatch.setenv('REPORT_PLANNER', 'rules')
-    assert planner_mode() == 'rules'
+    with pytest.raises(ValueError, match='REPORT_PLANNER=openai'):
+        planner_mode()
 
 def test_legacy_api_ai_branch_never_calls_keyword_parser(workspace):
     import asyncio
     from app import main
     response = {'status': 'ready', 'result': {'source_file': 'staff.csv', 'total_rows': 2}}
     with patch.object(main, 'ensure_session'), patch.object(main, 'create_task', return_value=7), \
-         patch.object(main, 'update_task_status'), patch.object(main, 'parse_command', side_effect=AssertionError('keyword parser')), \
+         patch.object(main, 'update_task_status'), patch('legacy_nlp.command_parser.parse_command', side_effect=AssertionError('keyword parser')), \
          patch('app.services.chat.chat_conversation.chat', return_value=response['result']):
         outcome = asyncio.run(main.handle_command(main.CommandRequest(text='ai kiem nhieu nhat', project='demo')))
     assert outcome.result['total_rows'] == 2

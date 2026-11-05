@@ -1,5 +1,6 @@
 """Single-snapshot automatic reporting, evidence and HTTP contract regressions."""
 import asyncio
+import copy
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -11,6 +12,20 @@ from fastapi import HTTPException
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.services.reports import conversation_reporting as service
 from app.main import app, automatic_conversation_report, ReportPlanRequest
+
+
+@pytest.fixture(autouse=True)
+def ai_provider(monkeypatch):
+    """Mock only the provider boundary; execute real snapshot/report/export logic."""
+    monkeypatch.setenv('REPORT_PLANNER', 'openai')
+    plan = {'status': 'ready', 'source': 'sales.csv', 'config': {
+        'version': 1, 'filters': [], 'filter_logic': 'and', 'group_by': ['san pham'],
+        'metrics': [{'column': 'doanh thu', 'operation': 'sum', 'alias': 'RevenueSum'}]},
+        'explanation': ['Sum revenue by product']}
+    with patch('app.services.ai.openai_planner.plan_with_openai',
+               side_effect=lambda *a, **k: copy.deepcopy(plan)) as provider, \
+         patch('requests.post', side_effect=AssertionError('live HTTP forbidden')):
+        yield provider
 
 
 @pytest.fixture
@@ -45,10 +60,14 @@ def test_real_request_reports_without_preview_or_confirm(workspace):
 
 
 @pytest.mark.parametrize('text', ['doanh thu theo san pham', 'lam phep thuat voi du lieu'])
-def test_ambiguous_and_unsupported_never_fall_back(workspace, text):
+def test_ambiguous_and_unsupported_never_fall_back(workspace, ai_provider, text):
     source, output = workspace
     (source / 'other.csv').write_bytes((source / 'sales.csv').read_bytes())
+    ai_provider.side_effect = None
+    ai_provider.return_value = {'status': 'clarify' if text.startswith('doanh') else 'unsupported',
+                                'candidate_sources': ['sales.csv', 'other.csv'], 'config': None}
     response = service.automatic_request(source, 'demo', text)
+    ai_provider.assert_called_once()
     assert response['status'] == 'requires_input'
     assert response['report_plan']['status'] != 'ready'
     assert 'result' not in response
@@ -73,12 +92,13 @@ def test_explicit_selection_and_unique_output(workspace):
 
 def test_changed_file_after_plan_uses_original_snapshot(workspace):
     source, output = workspace
-    real_planner = service.plan_report
-    def change_after_plan(text, frames):
-        result = real_planner(text, frames)
+    from app.services.ai.openai_planner import plan_with_openai
+    real_planner = plan_with_openai.side_effect
+    def change_after_plan(text, frames, **kwargs):
+        result = real_planner(text, frames, **kwargs)
         (source / 'sales.csv').write_text('san pham,doanh thu\nZ,999\n', encoding='utf-8')
         return result
-    with patch.object(service, 'plan_report', side_effect=change_after_plan) as planner:
+    with patch('app.services.ai.openai_planner.plan_with_openai', side_effect=change_after_plan) as planner:
         result = service.automatic_request(source, 'demo', 'doanh thu theo san pham')['result']
     assert sum(row['RevenueSum'] for row in result['summary']) == 30
     planner.assert_called_once()
@@ -87,7 +107,7 @@ def test_changed_file_after_plan_uses_original_snapshot(workspace):
 def test_wrong_planner_source_cannot_override_exact_selection(workspace):
     source, output = workspace
     plan = {'status': 'ready', 'source': 'other.csv', 'config': {'version': 1}}
-    with patch.object(service, 'plan_report', return_value=plan), pytest.raises(ValueError):
+    with patch('app.services.ai.openai_planner.plan_with_openai', return_value=plan), pytest.raises(ValueError):
         service.automatic_request(source, 'demo', 'doanh thu', 'sales.csv')
     assert not list(output.iterdir())
 
@@ -108,7 +128,7 @@ def test_absent_evidence_never_exports(workspace, contents):
 def test_malformed_config_is_clean_error(workspace):
     source, output = workspace
     plan = {'status': 'ready', 'source': 'sales.csv', 'config': {'version': 1, 'metrics': [{'operation': 'sum'}]}}
-    with patch.object(service, 'plan_report', return_value=plan), pytest.raises(ValueError):
+    with patch('app.services.ai.openai_planner.plan_with_openai', return_value=plan), pytest.raises(ValueError):
         service.automatic_request(source, 'demo', 'doanh thu')
     assert not list(output.iterdir())
 
@@ -117,10 +137,19 @@ def test_auto_route_contract_and_no_generic_fallback(workspace):
     source, output = workspace
     assert '/api/report/auto' in {route.path for route in app.routes}
     with patch('app.main.get_input_dir', return_value=source), \
-         patch('app.main.run_export_report', side_effect=AssertionError('generic fallback')):
+         patch('app.workflows.report_export.run_export_report', side_effect=AssertionError('generic fallback')):
         response = asyncio.run(automatic_conversation_report(ReportPlanRequest(text='doanh thu theo san pham')))
     assert response['status'] == 'ready'
     with patch('app.services.reports.conversation_reporting.automatic_request', side_effect=ValueError('bad data')):
         with pytest.raises(HTTPException) as error:
             asyncio.run(automatic_conversation_report(ReportPlanRequest(text='bad')))
     assert error.value.status_code == 400
+
+
+def test_provider_error_never_falls_back(workspace, ai_provider):
+    source, output = workspace
+    ai_provider.side_effect = ValueError('OPENAI_UNAVAILABLE')
+    with patch.object(service, '_render_report') as render, pytest.raises(ValueError, match='OPENAI_UNAVAILABLE'):
+        service.automatic_request(source, 'demo', 'doanh thu')
+    render.assert_not_called()
+    assert not list(output.iterdir())

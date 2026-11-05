@@ -1,6 +1,7 @@
 ﻿"""Approval, source-isolation and evidence regressions for conversational reports."""
 import copy
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -26,8 +27,12 @@ class ConversationReportingTests(unittest.TestCase):
             {'column': 'value', 'operation': 'sum', 'alias': 'Total'}]}
         self.plan = {'status': 'ready', 'source': 'a.csv', 'config': self.config,
                      'explanation': ['Sum value by team'], 'questions': [], 'unsupported': []}
-        self.planner = patch.object(service, 'plan_report', side_effect=lambda *_: copy.deepcopy(self.plan)).start()
         self.addCleanup(patch.stopall)
+        patch.dict(os.environ, {'REPORT_PLANNER': 'openai'}).start()
+        self.planner = patch(
+            'app.services.ai.openai_planner.plan_with_openai',
+            side_effect=lambda *args, **kwargs: copy.deepcopy(self.plan),
+        ).start()
         patch.object(service, 'safe_output_path', side_effect=lambda project, name: self.output / name).start()
 
     def preview(self, selected=None):
@@ -44,6 +49,8 @@ class ConversationReportingTests(unittest.TestCase):
         result = self.execute(approval, 'a.csv')
         self.assertEqual(result['summary'], [{'team': 'A', 'Total': 30}, {'team': 'B', 'Total': 5}])
         self.assertEqual(result['total_rows'], 3)
+        self.assertEqual(result['planner'], 'openai')
+        self.planner.assert_called_once()
         self.assertEqual(result['files_included'], 1)
         self.assertTrue(Path(result['output_path']).exists())
         self.assertEqual(len(list(self.output.iterdir())), 1)
@@ -56,12 +63,43 @@ class ConversationReportingTests(unittest.TestCase):
             self.execute(approval)
         self.assertEqual(list(self.output.iterdir()), [])
 
-    def test_changed_full_configuration_rejects_stale_approval(self):
+    def test_changed_planner_configuration_executes_frozen_approval(self):
         approval = self.preview()
+        approved_config = copy.deepcopy(approval['config'])
         self.config['top_n'] = {'column': 'Total', 'n': 1}
-        with self.assertRaisesRegex(ValueError, 'thay doi'):
-            self.execute(approval)
+        self.config['metrics'][0]['operation'] = 'count'
+        result = self.execute(approval)
+        self.assertEqual(result['evidence']['config'], approved_config)
+        self.assertEqual(result['summary'], [{'team': 'A', 'Total': 30}, {'team': 'B', 'Total': 5}])
+        self.assertEqual(result['evidence']['snapshot_fingerprint'], approval['fingerprint'])
+        self.planner.assert_called_once()
+
+    def test_changed_model_does_not_replan_approved_configuration(self):
+        with patch.dict(os.environ, {'OPENAI_MODEL': 'preview-model'}):
+            approval = self.preview()
+        with patch.dict(os.environ, {'OPENAI_MODEL': 'different-model'}):
+            result = self.execute(approval)
+        self.assertEqual(result['evidence']['config'], approval['config'])
+        self.assertEqual(result['summary'], [{'team': 'A', 'Total': 30}, {'team': 'B', 'Total': 5}])
+        self.planner.assert_called_once()
+
+    def test_mutating_returned_preview_does_not_change_stored_approval(self):
+        approval = self.preview()
+        approved_config = copy.deepcopy(approval['config'])
+        approval['config']['metrics'][0]['operation'] = 'count'
+        approval['source'] = 'b.csv'
+        result = self.execute(approval)
+        self.assertEqual(result['evidence']['config'], approved_config)
+        self.assertEqual(result['source_file'], 'a.csv')
+        self.assertEqual(result['summary'], [{'team': 'A', 'Total': 30}, {'team': 'B', 'Total': 5}])
+        self.planner.assert_called_once()
+
+    def test_changed_selected_source_rejects_approval(self):
+        approval = self.preview('a.csv')
+        with self.assertRaises(ValueError):
+            self.execute(approval, 'b.csv')
         self.assertEqual(list(self.output.iterdir()), [])
+        self.planner.assert_called_once()
 
     def test_changed_request_rejects_stale_approval(self):
         approval = self.preview()

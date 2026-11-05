@@ -14,6 +14,8 @@ _LOCK=RLock()
 
 
 def chat(input_dir, project, text, session_id=None):
+    from app.services.ai.planner_settings import planner_mode
+    planner_mode()
     with _LOCK:
         return _chat(input_dir,project,text,session_id)
 

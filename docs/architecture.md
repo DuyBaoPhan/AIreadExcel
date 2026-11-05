@@ -11,7 +11,7 @@ Application code remains in `excel_rule_engine/app/`; this is not a move to a to
 | Layer | Responsibility |
 | --- | --- |
 | `app/main.py` | FastAPI entrypoint and API integration. |
-| `app/core/` | Domain contracts, parsing, planning, validation and rule-based NLP. |
+| `app/services/reports/schema_matching.py` | Column aliases/normalization for validated references; no intent classification. |
 | `app/ui/` | Streamlit presentation: `chatbot.py`, `report_wizard.py`, `advanced_report_wizard.py`, `report_plan_ui.py`, and `ui_theme.py`. |
 | `app/services/ai/` | AI-provider integration, structured planning and retrieval integration. |
 | `app/services/chat/` | Conversation orchestration, context and pending interactions. |
@@ -49,7 +49,6 @@ AIreadExcel/
     |-- app/
     |   |-- main.py               # HTTP API
     |   |-- paths.py              # Stable filesystem locations
-    |   |-- core/
     |   |-- ui/
     |   |-- services/
     |   |   |-- ai/
@@ -60,6 +59,7 @@ AIreadExcel/
     |   |   `-- runtime/
     |   |-- database/
     |   `-- workflows/
+    |-- legacy_nlp/              # Historical offline benchmark code, never imported by app
     |-- tests/
     |-- examples/                 # Sample report configurations
     `-- projects/                 # Existing inputs, policies and generated outputs
@@ -81,3 +81,9 @@ python scripts/rag_live_smoke.py
 ```
 
 Existing root launch commands and the Cloud entrypoint are unchanged. Internal Python imports now use functional packages (for example `app.services.reports.report_engine` and `app.ui.ui_theme`); external scripts importing the old flat service paths must update their imports. No old-path module aliases are installed, avoiding two module instances and split in-memory approval/session state.
+
+## Natural-language routing (OpenAI only)
+
+The chatbot and conversational report endpoints use OpenAI structured outputs. `REPORT_PLANNER` defaults to `openai`; `auto` remains an alias with identical behavior. `rules` is rejected. Missing API credentials and provider errors fail explicitly, with no regex, fuzzy intent or rule-planner fallback. Python still validates sources, columns, types, operations, write proposals and approval tokens; these safety checks are independent of language understanding and are retained. Manual report wizards may execute explicit configurations without asking a language model.
+
+Legacy offline NLP benchmarks are historical regression material, not evidence of current OpenAI semantic accuracy.

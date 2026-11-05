@@ -1,4 +1,4 @@
-﻿"""Automatic reporting UX: clear requests execute, ambiguous ones ask only once."""
+"""Chat UX delegates every message to AI; unavailable APIs never fall back."""
 import ast
 from contextlib import nullcontext
 from pathlib import Path
@@ -9,49 +9,77 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 
-def command_harness(response, automatic=True):
+def command_harness(response, text='top 2 san pham doanh thu cao nhat', automatic=True):
     class State:
         project = 'demo_project'
-        pending_report = None
+        pending_report = {'stale': True}
+        pending_update = {'stale': True}
+        agent_session_id = 'previous-session'
         def get(self, key, default=None):
-            return automatic if key == 'auto_reports' else default
+            return getattr(self, key, automatic if key == 'auto_reports' else default)
+    state = State()
     path = Path(__file__).resolve().parents[1] / 'app' / 'ui' / 'chatbot.py'
     node = next(n for n in ast.parse(path.read_text(encoding='utf-8')).body if isinstance(n, ast.FunctionDef) and n.name == 'process_command')
-    namespace = {'st': SimpleNamespace(session_state=State(), spinner=lambda *a: nullcontext()),
+    namespace = {'st': SimpleNamespace(session_state=state, spinner=lambda *a: nullcontext()),
                  'call_api': Mock(return_value=response), 'add_message': Mock(),
                  '_handle_requires_input': Mock(), '_handle_success_result': Mock()}
     exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), 'exec'), namespace)
-    namespace['process_command']('top 2 san pham doanh thu cao nhat')
+    namespace['process_command'](text)
     return namespace
 
 
-def test_clear_request_auto_executes_without_preview_or_confirm():
-    state = command_harness({'status': 'ready', 'result': {'report_type': 'planned', 'output_path': 'x.xlsx'}})
-    assert state['call_api'].call_count == 1
-    assert state['call_api'].call_args.args[0] == '/api/report/auto'
+@pytest.mark.parametrize('text', ['xin chao', 'doanh thu theo san pham', 'xuat bao cao Excel'])
+@pytest.mark.parametrize('automatic', [True, False])
+def test_every_message_uses_chat_without_keyword_or_approval_branches(text, automatic):
+    state = command_harness({'session_id': 'new-session', 'reply': 'AI response', 'citations': []}, text, automatic)
+    state['call_api'].assert_called_once_with('/api/chat', {
+        'text': text, 'project': 'demo_project', 'session_id': 'previous-session'})
+    assert state['st'].session_state.agent_session_id == 'new-session'
+    assert state['st'].session_state.pending_report is None
+    assert state['st'].session_state.pending_update is None
     state['_handle_requires_input'].assert_not_called()
-    state['_handle_success_result'].assert_called_once()
-
-
-def test_ambiguous_request_retains_clarification_not_generic_export():
-    plan = {'status': 'clarify', 'candidate_sources': ['hr.csv', 'pay.csv'], 'config': None}
-    state = command_harness({'status': 'requires_input', 'report_plan': plan})
     state['_handle_success_result'].assert_not_called()
-    assert state['_handle_requires_input'].call_args.args[0]['status'] == 'clarify'
+    assert state['add_message'].call_args.args[:2] == ('assistant', 'AI response')
+
+
+def test_query_result_and_export_metadata_are_rendered_from_ai_response():
+    result = {'summary': [{'RevenueSum': 30}], 'detail_preview': [{'product': 'A'}],
+              'total_rows': 2, 'warnings': ['sum not count'], 'output_path': 'x.xlsx'}
+    state = command_harness({'session_id': 'new-session', 'reply': 'Report ready',
+                             'result': result, 'citations': [{'source': 'sales.csv'}]})
+    meta = state['add_message'].call_args.args[2]
+    for key, value in result.items():
+        assert meta[key] == value
+    assert meta['citations'] == [{'source': 'sales.csv'}]
     assert state['call_api'].call_count == 1
 
 
-def test_manual_mode_preserves_explicit_approval():
-    state = command_harness({'status': 'ready', 'config': {}}, automatic=False)
-    assert state['call_api'].call_args.args[0] == '/api/report/preview'
-    state['_handle_requires_input'].assert_called_once()
-
-
-def test_old_backend_404_does_not_fall_back():
-    state = command_harness({'error': '404 Not Found'})
+def test_ai_clarification_remains_conversational_without_generic_export():
+    state = command_harness({'session_id': 'new-session', 'reply': 'Which source should I use?',
+                             'citations': [], 'result': None})
+    assert state['add_message'].call_args.args[1] == 'Which source should I use?'
+    assert state['add_message'].call_args.args[2]['output_path'] is None
     assert state['call_api'].call_count == 1
+    assert state['st'].session_state.pending_report is None
+
+
+@pytest.mark.parametrize('response', [None, {}, {'error': '404 Not Found'}, {'error': 'OPENAI_UNAVAILABLE'}])
+def test_unavailable_chat_api_does_not_fall_back(response):
+    state = command_harness(response)
+    assert state['call_api'].call_count == 1
+    assert state['call_api'].call_args.args[0] == '/api/chat'
+    assert state['st'].session_state.agent_session_id == 'previous-session'
     state['_handle_success_result'].assert_not_called()
     state['_handle_requires_input'].assert_not_called()
+    assert state['add_message'].call_args.args[0] == 'assistant'
+
+
+def test_update_proposal_is_retained_without_automatic_execution():
+    proposal = {'token': 'approval-required', 'summary': 'Change one cell'}
+    state = command_harness({'session_id': 'new-session', 'reply': 'Please confirm',
+                             'update_proposal': proposal})
+    assert state['st'].session_state.pending_update == proposal
+    assert state['call_api'].call_count == 1
 
 
 SCRIPT = '''

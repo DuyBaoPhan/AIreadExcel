@@ -59,13 +59,17 @@ def test_repeated_reports_unique_and_valid():
 
 
 def test_real_export_uses_context_name_and_no_input_overwrite(tmp_path,monkeypatch):
-    monkeypatch.setenv('REPORT_PLANNER','rules')
+    monkeypatch.setenv('REPORT_PLANNER','openai')
     source=tmp_path/'input';source.mkdir()
     output=tmp_path/'output';output.mkdir()
     path=source/'sales.csv';path.write_text('month,revenue\n2024-10,100\n2024-11,200\n')
     original=path.read_bytes()
     monkeypatch.setattr(reports,'safe_output_path',lambda p,n:output/n)
-    responses=[reports.automatic_request(source,'demo','doanh thu thang 10 nam 2024')['result'] for _ in range(2)]
+    planned = {'status': 'ready', 'source': 'sales.csv',
+               'config': config(filters=[{'column':'month','type':'date','operator':'between',
+                                         'value':['2024-10-01','2024-10-31']}])}
+    with patch('app.services.ai.openai_planner.plan_with_openai', return_value=planned):
+        responses=[reports.automatic_request(source,'demo','doanh thu thang 10 nam 2024')['result'] for _ in range(2)]
     for r in responses:
         name=r['output_filename']
         assert name.startswith('Bao_cao_doanh_thu_2024-10__'),name

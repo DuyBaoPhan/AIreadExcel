@@ -1,6 +1,7 @@
+<!-- Current architecture: OpenAI-only conversational understanding. -->
 # Excel Studio - Excel AI & Reporting
 
-> Excel chatbot and report engine with Vietnamese rule-based planning, optional OpenAI integration, and hybrid local retrieval. See the AI/RAG sections below for configuration and privacy boundaries.
+> Excel chatbot with OpenAI-only natural-language understanding, validated Python execution, and hybrid local retrieval. An API key is required for conversational requests; there is no keyword/rules fallback.
 
 ---
 
@@ -20,11 +21,11 @@ AIreadExcel/
     |-- app/
     |   |-- main.py           # FastAPI
     |   |-- paths.py          # Shared filesystem paths
-    |   |-- core/             # Parsing and rule-based planning
     |   |-- ui/               # Streamlit interface
     |   |-- services/         # ai, chat, excel, reports, sources, runtime
     |   |-- database/         # SQLite persistence
     |   `-- workflows/        # Deterministic data processing
+    |-- legacy_nlp/           # Historical offline benchmarks only
     |-- tests/
     |-- examples/             # Report configuration samples
     `-- projects/             # Existing source files and report outputs
@@ -137,7 +138,7 @@ python -m pytest
 
 ## 🔒 Quy tắc an toàn
 
-- Offline rules work without an LLM; optional OpenAI planning and RAG send the documented request/metadata or evidence excerpts to the provider.
+- OpenAI handles conversational understanding; requests/metadata or RAG evidence excerpts are sent to the provider as documented. Manual report configuration still runs locally.
 - Report exports write into `output/`. Explicit source-update requests can modify a source only after the separate confirmation flow; a backup is retained.
 - ✅ **Chặn path traversal** — chỉ truy cập trong phạm vi project
 - ✅ **Không tự xóa dữ liệu** — lệnh DELETE bị chặn hoàn toàn
@@ -166,7 +167,7 @@ python -m pytest
 |------------|-----------|
 | Backend API | FastAPI + Uvicorn |
 | Chatbot UI | Streamlit |
-| NLP Engine | Regex + RapidFuzz (Rule-based) |
+| Natural-language understanding | OpenAI structured outputs; no keyword routing |
 | Data Processing | Pandas |
 | Excel I/O | OpenPyXL |
 | Validation | Pydantic v2 |
@@ -180,7 +181,7 @@ python -m pytest
 ```
 Người dùng nhập câu lệnh
         ↓
-[Intent Router] - Regex + Keyword + Fuzzy matching
+[OpenAI agent] - Structured action and report configuration
         ↓
 [Entity Extractor] - Cột, toán tử, giá trị, tên file
         ↓
@@ -246,6 +247,8 @@ File sinh trong `excel_rule_engine/projects/*/output/` được Git bỏ qua, ng
 
 ## Chatbot hiểu yêu cầu báo cáo theo dữ liệu (không LLM)
 
+> Historical offline implementation/benchmark only. This is not the production chatbot routing path. Current requests require OpenAI; these older scores do not measure OpenAI accuracy.
+
 Yêu cầu phân tích cụ thể được chuyển sang bộ lập kế hoạch dựa trên tên cột và giá trị thật của file, không còn chỉ bắt từ “báo cáo” rồi gộp toàn bộ nguồn. Chatbot hiển thị nguồn, chỉ tiêu, nhóm và điều kiện; người dùng phải bấm **Xác nhận và tạo báo cáo**. Khi có nhiều nguồn phù hợp, chọn nguồn và phân tích lại; khi câu còn mơ hồ, gửi lại câu đầy đủ đã làm rõ. Đây chưa phải hội thoại suy luận tự do.
 
 Các mẫu câu trong phạm vi hỗ trợ:
@@ -258,7 +261,7 @@ Các mẫu câu trong phạm vi hỗ trợ:
 - “Đếm dòng doanh thu từ 10 đến 30 triệu”
 - “Top 5 sản phẩm doanh thu cao nhất”
 
-Tên sản phẩm/phòng ban/khu vực/trạng thái được khớp từ dữ liệu thật, không hard-code. Tên cột có thể Việt/Anh theo từ điển `SCHEMA_ALIASES` trong `excel_rule_engine/app/core/report_planner.py`. Chuẩn hóa dấu chỉ dùng khi nhận diện; bộ lọc giữ giá trị gốc. Nhiều cột đồng nghĩa hoặc nhiều nguồn đều cần làm rõ. Giá trị tháng YYYY-MM có thể lọc năm; tháng không có năm không được tự suy đoán, trừ khi nguồn xác định duy nhất một năm (hiển thị kế hoạch để kiểm tra).
+Tên sản phẩm/phòng ban/khu vực/trạng thái được khớp từ dữ liệu thật, không hard-code. Tên cột có thể Việt/Anh theo từ điển `SCHEMA_ALIASES` trong `excel_rule_engine/app/services/reports/schema_matching.py`. Chuẩn hóa dấu chỉ dùng khi nhận diện; bộ lọc giữ giá trị gốc. Nhiều cột đồng nghĩa hoặc nhiều nguồn đều cần làm rõ. Giá trị tháng YYYY-MM có thể lọc năm; tháng không có năm không được tự suy đoán, trừ khi nguồn xác định duy nhất một năm (hiển thị kế hoạch để kiểm tra).
 
 Chưa hỗ trợ qua câu tự nhiên: dự báo, nối nhiều nguồn, so sánh kỳ, điều kiện OR/loại trừ phức tạp, công thức nghiệp vụ tùy ý hoặc nối tiếp ngữ cảnh kiểu “còn tháng trước?”. Sử dụng Báo cáo nâng cao cho các phép toán có giao diện tương ứng. Nếu còn cụm điều kiện chưa nhận diện, chatbot phải hỏi/từ chối, không xuất thay bằng báo cáo tổng hợp. Các câu xuất tổng hợp chung rõ ràng vẫn dùng luồng cũ.
 
@@ -268,6 +271,8 @@ Kiểm thử toàn bộ (bao gồm tập câu tiếng Việt): cài `pip install
 
 
 ## Kiểm thử ngôn ngữ tự nhiên diện rộng
+
+> Historical offline implementation/benchmark only. This is not the production chatbot routing path. Current requests require OpenAI; these older scores do not measure OpenAI accuracy.
 
 Bộ kiểm thử cố định có 596 trường hợp (572 câu khác nhau), gồm câu có dấu/không dấu, phép tổng/trung bình/đếm/min/max, nhóm nhiều chiều, xếp hạng, lọc số và thời gian, nguồn mơ hồ và điều kiện chưa hỗ trợ. Kết quả kỳ vọng được viết độc lập và đối chiếu số liệu, không chỉ kiểm tra trạng thái “đã hiểu”.
 
@@ -300,7 +305,7 @@ Quy tắc chỉ áp dụng khi câu hỏi đã được phân tích thành đi�
 
 ## OpenAI agent — understanding without keyword routing
 
-When `OPENAI_API_KEY` is configured, `REPORT_PLANNER=auto` selects OpenAI. All chatbot requests then go to the AI planner, not the keyword intent parser. Python still executes validated reports; the model cannot run code, access arbitrary files or calculate authoritative results itself.
+All chatbot requests go to OpenAI, not a keyword intent parser. `REPORT_PLANNER=openai` is the supported setting; `auto` is a compatibility alias for OpenAI, never an offline fallback. Python still executes validated reports; the model cannot run code, access arbitrary files or calculate authoritative results itself.
 
 ### Streamlit Cloud
 
@@ -312,13 +317,13 @@ OPENAI_MODEL = "gpt-4.1-mini"
 REPORT_PLANNER = "openai"
 ```
 
-Never commit the real key or send it in chat. Publish the code to the app branch and **Reboot app**. The entrypoint passes only these documented settings to the backend subprocess. The sidebar shows whether AI or offline rules are active. The model must support strict JSON-schema structured outputs; change `OPENAI_MODEL` if needed for your account.
+Never commit the real key or send it in chat. Publish the code to the app branch and **Reboot app**. The entrypoint passes only these documented settings to the backend subprocess. The sidebar shows AI configuration status. Missing keys and provider failures stop safely rather than activating offline keyword matching. The model must support strict JSON-schema structured outputs; change `OPENAI_MODEL` if needed for your account.
 
 Local PowerShell: set these as environment variables in the terminal used to launch the application. The repository-root `.env` is loaded automatically at startup using python-dotenv; existing process environment variables take precedence. Copy `.env.example` to `.env` when setting up a new checkout.
 
-- `REPORT_PLANNER=auto`: OpenAI if a key exists, otherwise explicit offline rules mode.
+- `REPORT_PLANNER=auto`: compatibility alias for OpenAI; a key is still required.
 - `REPORT_PLANNER=openai`: require the key, never silently fall back if API fails.
-- `REPORT_PLANNER=rules`: explicitly use the existing offline implementation.
+- `REPORT_PLANNER=rules`: no longer supported by production; change this setting to `openai`.
 
 ### Privacy, boundaries and reliability
 

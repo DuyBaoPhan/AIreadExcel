@@ -4,8 +4,8 @@ import tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.services.sources.file_manager import list_excel_files
-from app.core.analytical_request import is_analytical_request
-from app.core.report_planner import plan_report
+from legacy_nlp.analytical_request import is_analytical_request
+from legacy_nlp.report_planner import plan_report
 import pandas as pd
 
 class TestRankingRegression(unittest.TestCase):
@@ -45,12 +45,16 @@ class TestChatRoutingRegression(unittest.TestCase):
         exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
         namespace['process_command']('top 3 san pham co doanh thu cao nhat')
         self.assertEqual(api.call_count, 1)
-        self.assertEqual(api.call_args.args[0], '/api/report/auto')
+        self.assertEqual(api.call_args.args[0], '/api/chat')
+        self.assertEqual(api.call_args.args[1]['text'], 'top 3 san pham co doanh thu cao nhat')
         return messages, handle
 
-    def test_analytical_request_goes_directly_to_planner(self):
-        _, handle = self.run_command_with_response({'status': 'ready', 'config': {}})
-        self.assertEqual(handle.call_count, 1)
+    def test_analytical_request_uses_ai_chat_response(self):
+        messages, handle = self.run_command_with_response({'session_id': 'ai-session', 'action': 'query',
+            'reply': 'Nguon sales.xlsx', 'result': {'summary': [{'RevenueSum': 110}]}})
+        handle.assert_not_called()
+        self.assertEqual(messages.call_args.args[1], 'Nguon sales.xlsx')
+        self.assertEqual(messages.call_args.args[2]['summary'], [{'RevenueSum': 110}])
 
     def test_missing_planner_does_not_fall_back_to_merge(self):
         messages, handle = self.run_command_with_response({'error': '404 Not Found'})

@@ -4,6 +4,7 @@ Chạy: python scripts/run_test_cases.py
 Không cần FastAPI server chạy — test trực tiếp các module.
 """
 
+# Historical rule-parser demonstration only; not the production AI path.
 from __future__ import annotations
 
 import sys
@@ -86,7 +87,7 @@ def setup_sample_files(input_dir: Path):
 # ──────────────────────────────────────────────────────────────
 
 def main():
-    from app.core.command_parser import parse_command
+    from legacy_nlp.command_parser import parse_command
     from app.workflows.aggregation import run_aggregation
     from app.workflows.filtering import run_filter
     from app.workflows.comparison import run_comparison

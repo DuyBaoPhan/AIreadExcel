@@ -1,12 +1,63 @@
-"""Real planner -> bounded file snapshots -> approval -> workbook regressions."""
+"""Fixed OpenAI responses -> real validation -> snapshots -> approval -> XLSX."""
 from io import BytesIO
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+import json
 
 import pandas as pd
 import pytest
 from openpyxl import load_workbook
 from app.services.reports import conversation_reporting as service
+
+
+def fixture_config(groups=(), metric='revenue', operation='sum', alias='RevenueSum', filters=(), top=None):
+    """Finite hand-authored plans, never a text/keyword translator."""
+    return {'version': 1, 'filters': list(filters), 'filter_logic': 'and',
+            'group_by': list(groups), 'metrics': [{'column': metric, 'operation': operation, 'alias': alias}],
+            'date_group': None, 'top_n': top}
+
+
+def date_filter(start, end):
+    return {'column': 'month', 'operator': 'between', 'type': 'date', 'value': [start, end]}
+
+
+YEAR = date_filter('2024-01-01', '2024-12-31')
+PLANS = {
+    'doanh thu Laptop Pro X nam 2024': ('sales.xlsx', fixture_config(filters=[YEAR,
+        {'column': 'product', 'operator': 'eq', 'type': 'text', 'value': 'Laptop Pro X'}])),
+    'top 1 san pham doanh thu cao nhat nam 2024': ('sales.xlsx', fixture_config(['product'], filters=[YEAR],
+        top={'column': 'RevenueSum', 'n': 1, 'ascending': False, 'offset': 0, 'scope': 'summary'})),
+    'san pham nao doanh thu nho nhat nam 2024': ('sales.xlsx', fixture_config(['product'], filters=[YEAR],
+        top={'column': 'RevenueSum', 'n': 1, 'ascending': True, 'offset': 0, 'scope': 'summary'})),
+    'luong trung binh theo phong ban': ('hr.csv', fixture_config(['department'], 'salary', 'mean', 'SalaryMean')),
+    'nhan vien nao luong cao nhat': ('hr.csv', fixture_config(['employee_id', 'name'], 'salary', 'sum', 'SalarySum',
+        top={'column': 'SalarySum', 'n': 1, 'ascending': False, 'offset': 0, 'scope': 'summary'})),
+    'dem nhan vien theo phong ban': ('hr.csv', fixture_config(['department'], None, 'rows', 'Employees')),
+    'doanh thu quy 1 nam 2024': ('sales.xlsx', fixture_config(filters=[date_filter('2024-01-01', '2024-03-31')])),
+    'doanh thu tu ngay 01/01/2024 den ngay 31/01/2024': ('sales.xlsx', fixture_config(filters=[date_filter('2024-01-01', '2024-01-31')])),
+    'dem nhan vien luong lon hon hoac bang 20.000.000': ('hr.csv', fixture_config(metric=None, operation='rows', alias='Employees', filters=[
+        {'column': 'salary', 'operator': 'ge', 'type': 'number', 'value': 20_000_000}])),
+}
+UNSUPPORTED = {'du bao doanh thu nam 2027', 'doanh thu sau thue theo san pham',
+               'doanh thu khong tinh Phone', 'so sanh doanh thu 2024 voi 2025'}
+
+
+@pytest.fixture(autouse=True)
+def fixed_openai_responses(monkeypatch):
+    monkeypatch.setenv('OPENAI_API_KEY', 'offline-fixture-key')
+    def respond(*args, **kwargs):
+        text = json.loads(kwargs['json']['messages'][-1]['content'])['request']
+        if text in PLANS:
+            source, config = PLANS[text]
+            plan = {'status': 'ready', 'source': source, 'config': config,
+                    'explanation': ['Ke hoach kiem thu co dinh.'], 'questions': [], 'unsupported': []}
+        else:
+            assert text in UNSUPPORTED, text
+            plan = {'status': 'unsupported', 'source': None, 'config': None,
+                    'explanation': [], 'questions': [], 'unsupported': ['Chua ho tro yeu cau nay.']}
+        return Mock(json=lambda: {'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(plan)}}]})
+    with patch('app.services.ai.openai_planner.requests.post', side_effect=respond):
+        yield
 
 
 @pytest.fixture

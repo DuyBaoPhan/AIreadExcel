@@ -15,9 +15,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pandas as pd
 
-from app.core.intent_router import classify_intent, Intent
-from app.core.command_parser import parse_command
-from app.core.entity_extractor import (
+from legacy_nlp.intent_router import classify_intent, Intent
+from legacy_nlp.command_parser import parse_command
+from legacy_nlp.entity_extractor import (
     extract_column, extract_operator, extract_numeric_value,
     extract_string_value, extract_entities,
 )

@@ -9,7 +9,7 @@ from app.services.chat import chat_conversation as chat
 def workspace(tmp_path,monkeypatch):
     source=tmp_path/'input';source.mkdir()
     (source/'staff.csv').write_text('name,salary\nAn,10\nBinh,20\n')
-    monkeypatch.setenv('REPORT_PLANNER','rules')
+    monkeypatch.setenv('REPORT_PLANNER','openai')
     chat._SESSIONS.clear()
     return source
 

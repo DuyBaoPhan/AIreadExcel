@@ -10,8 +10,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.core.intent_router import Intent, IntentResult, classify_intent
-from app.core.entity_extractor import extract_entities, extract_source_folder
+from legacy_nlp.intent_router import Intent, IntentResult, classify_intent
+from legacy_nlp.entity_extractor import extract_entities, extract_source_folder
 
 logger = logging.getLogger(__name__)
 

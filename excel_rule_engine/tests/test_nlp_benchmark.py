@@ -1,4 +1,4 @@
-﻿"""Acceptance tests and non-failing audit CLI for the fixed NLP corpus.
+﻿"""Historical legacy NLP acceptance tests and non-failing audit CLI for the fixed corpus.
 
 Run from repository root:
   python -m pytest excel_rule_engine/tests/test_nlp_benchmark.py -q
@@ -7,18 +7,17 @@ The audit always exits zero after writing per-sentence expected/actual failures;
 pytest is the strict gate. No network, UI, export, or database writes are used.
 """
 from __future__ import annotations
-import asyncio
 from collections import Counter, defaultdict
 import json
 from pathlib import Path
 import sys
-from unittest.mock import patch
 
 import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.core.report_planner import plan_report
+from legacy_nlp.report_planner import plan_report
+from legacy_nlp import analytical_request as classifier
 from app.services.reports.report_engine import run_report
 try:
     from .nlp_benchmark_cases import CASES, fixtures
@@ -81,12 +80,11 @@ def evaluate(case):
     report.update(expected={'status': case['status'], 'source': case['source'], 'config': case['expected']}, failures=[])
     try:
         if case['route']:
-            from app.main import CommandRequest, handle_command
-            with patch('app.main.ensure_session'), patch('app.main.create_task', return_value=1), patch('app.main.update_task_status'), patch('app.main.run_export_report') as export, patch('app.main.run_aggregation'), patch('app.main.run_filter'), patch('app.main.run_comparison'), patch('app.services.reports.conversation_reporting.preview_request', return_value={'status':'ready', 'source':'fixture', 'config':{'version':1}, 'fingerprint':'benchmark'}) as preview:
-                response = asyncio.run(handle_command(CommandRequest(text=case['text'])))
-            report['actual'] = {'preview_calls':preview.call_count, 'export_calls':export.call_count, 'requires_input':response.requires_input}
-            if preview.call_count != 1 or export.call_count != 0 or not response.requires_input or response.requires_input.get('type') != 'report_plan':
-                report['failures'].append('routing: analytical requests must preview exactly once, never export')
+            # Historical classification corpus, not the production AI-only chat route.
+            analytical = classifier.is_analytical_request(case['text'])
+            report['actual'] = {'legacy_analytical_request': analytical}
+            if not analytical:
+                report['failures'].append('historical classification: expected analytical request')
         else:
             sources = fixtures(case['kind'])
             plan = plan_report(case['text'], sources)
@@ -134,7 +132,7 @@ def audit(path):
         key = 'passed' if result['passed'] else 'failed'
         categories[result['category']][key] += 1
         statuses[result['status']][key] += 1
-    payload = {'corpus_revision': 'campaign-expanded-v2', 'distinct_sentences': len({c['text'] for c in CASES}), 'total': len(results), 'passed':sum(r['passed'] for r in results), 'failed':sum(not r['passed'] for r in results), 'by_category':dict(categories), 'by_expected_status':dict(statuses), 'methodology':'Fixed hand-authored configs, independent pandas oracle. Accent pairs explicitly included. Supported and safety denominators separate. Routing mocked at preview boundary; no I/O.', 'results':results}
+    payload = {'corpus_revision': 'campaign-expanded-v2', 'distinct_sentences': len({c['text'] for c in CASES}), 'total': len(results), 'passed':sum(r['passed'] for r in results), 'failed':sum(not r['passed'] for r in results), 'by_category':dict(categories), 'by_expected_status':dict(statuses), 'methodology':'Fixed hand-authored configs, independent pandas oracle. Accent pairs explicitly included. Supported and safety denominators separate. Historical legacy classifier evaluated directly; production UI always uses /api/chat; no I/O.', 'results':results}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
     print(json.dumps({k:v for k,v in payload.items() if k != 'results'}, ensure_ascii=False, indent=2))
@@ -155,11 +153,14 @@ if __name__ == '__main__':
         for filename in ('report_planner', 'analytical_request'):
             relative = f'excel_rule_engine/app/core/{filename}.py'
             source = subprocess.check_output(['git', 'show', f'{args.baseline_ref}:{relative}'], cwd=repository).decode('utf-8-sig')
+            # Keep historical Git paths while resolving their imports in the archive.
+            source = source.replace('from app.core.report_planner import ',
+                                    'from legacy_nlp.report_planner import ')
             module = types.ModuleType('baseline_' + filename)
             exec(compile(source, relative, 'exec'), module.__dict__)
             modules[filename] = module
         plan_report = modules['report_planner'].plan_report
-        import app.core.analytical_request as classifier
+        import legacy_nlp.analytical_request as classifier
         classifier.is_analytical_request = modules['analytical_request'].is_analytical_request
     payload = audit(args.audit)
     if args.baseline_ref:

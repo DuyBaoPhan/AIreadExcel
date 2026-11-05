@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from app.core.report_planner import plan_report
+from legacy_nlp.report_planner import plan_report
 from app.services.reports.report_engine import run_report
 
 

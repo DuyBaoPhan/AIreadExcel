@@ -2,7 +2,7 @@
 
 ## Architecture
 
-AI is the planner, not the calculator. `REPORT_PLANNER=auto` uses OpenAI only when a key is present; `openai` explicitly requires it; `rules` is offline. UI and legacy command API bypass keyword intent routing in AI mode. Existing read-only reporting executor, snapshot limits and unique outputs are retained.
+AI is the planner, not the calculator. Production now always uses OpenAI for natural-language requests. `REPORT_PLANNER` defaults to `openai`; `auto` is an alias, and `rules` is rejected. Missing credentials and API errors never activate a keyword fallback. UI and the command compatibility API bypass keyword intent routing. Existing read-only reporting executor, snapshot limits and unique outputs are retained.
 
 Only current user request, filenames, row counts, column names/dtypes and configured department priorities are transmitted. No cell values or sample rows are sent. User-entered text and metadata may themselves be sensitive. Credentials are backend-only environment variables / Streamlit Secrets; no key was requested in chat or used for these tests.
 
@@ -35,3 +35,11 @@ The main AI chatbot now separates chat/query/export/update. Queries run validate
 Earlier one-call/no-history statements describe the legacy reporting endpoint, not the newer conversational path. Live language quality remains unmeasured; mocked tests cannot establish semantic accuracy.
 
 Final conversational verification: **1,109 tests passed; 73 subtests passed**. Focused chat/source-update rerun after final error-handling adjustment: **15 passed; 17 subtests passed**. Compile and diff checks succeeded. Provider responses were mocked for AI tests; no live semantic-quality evaluation or Cloud deployment performed.
+
+## AI-only migration
+
+Production no longer imports keyword intent routing, entity extraction, analytical-request regex gates or the deterministic natural-language planner. The old implementation is isolated in `excel_rule_engine/legacy_nlp/` solely for historical regression evaluation. Existing historical test totals above do not establish current OpenAI language accuracy.
+
+Chat UI always calls `/api/chat`; `/api/command` is an AI compatibility adapter. Conversational report preview/auto use the OpenAI structured planner and confirmation executes the frozen approved config without re-planning. `REPORT_PLANNER=openai` is the default; `auto` is an alias; `rules` fails explicitly. Missing credentials/API failure never activate local keyword routing. Column aliases/normalization now live in `app/services/reports/schema_matching.py`; these validate references/name outputs, not classify user intent. Explicit source ambiguity and configured source-authority checks remain protective vetoes, not alternative language planners.
+
+All migration provider tests mock HTTP; no live OpenAI evaluation or Cloud deployment is implied. Schema-valid plans can still misunderstand user meaning, so production model evaluation remains necessary.

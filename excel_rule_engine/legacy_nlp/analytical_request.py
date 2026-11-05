@@ -1,6 +1,6 @@
 ﻿"""Recognize analytical requests without confusing report plans with legacy actions."""
 import re
-from app.core.report_planner import normalize
+from legacy_nlp.report_planner import normalize
 
 
 def is_analytical_request(text: str) -> bool:

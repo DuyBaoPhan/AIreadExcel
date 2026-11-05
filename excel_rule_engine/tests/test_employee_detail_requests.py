@@ -7,7 +7,8 @@ import pandas as pd
 import pytest
 from openpyxl import load_workbook
 
-from app.core.report_planner import plan_report
+from legacy_nlp.report_planner import plan_report
+from .test_openai_planner import mock_response
 from app.services.reports import conversation_reporting as service
 from app.services.reports.report_engine import run_report
 
@@ -85,7 +86,14 @@ def test_existing_employee_aggregate_is_unchanged(employees):
     assert run_report(employees, plan['config'])['summary'].iloc[0, 0] == 2
 
 
-def test_approved_detail_workbook_contains_only_matching_source_rows(tmp_path, employees):
+def test_approved_detail_workbook_contains_only_matching_source_rows(tmp_path, employees, monkeypatch):
+    monkeypatch.setenv("REPORT_PLANNER", "openai")
+    calls = mock_response(monkeypatch, {"status": "ready", "source": "hr.csv", "config": {
+        "version": 1, "filters": [{"column": "salary", "operator": "gt",
+                                  "value": 10_000_000, "type": "number"}],
+        "filter_logic": "and", "group_by": [], "metrics": [],
+        "date_group": None, "top_n": None},
+        "explanation": [], "questions": [], "unsupported": []})
     inputs, outputs = tmp_path / 'input', tmp_path / 'output'
     inputs.mkdir()
     outputs.mkdir()
@@ -98,6 +106,7 @@ def test_approved_detail_workbook_contains_only_matching_source_rows(tmp_path, e
         assert preview['source'] == 'hr.csv'
         assert list(outputs.iterdir()) == []
         result = service.execute_request(inputs, 'demo', text, preview['source'], preview['fingerprint'])
+    assert len(calls) == 1  # Execute consumes the approved snapshot, not another AI plan.
     assert result['summary'] == []
     assert result['total_rows'] == 2
     assert [row['employee_id'] for row in result['detail_preview']] == ['E2', 'E3']

@@ -12,8 +12,6 @@ from app.services.reports.advanced_report_export import build_advanced_report_by
 from app.services.sources.file_manager import list_excel_files, safe_output_path
 from app.services.reports.report_builder import read_uploaded_table
 from app.services.reports.report_engine import run_report, serialize_config
-from app.core.report_planner import plan_report
-from app.services.sources.source_policy import apply_source_policy
 from app.services.ai.planner_settings import planner_mode
 
 MAX_SOURCE_FILES = 20
@@ -62,26 +60,21 @@ def _preview(input_dir: Path, text: str, source_name: str | None):
     if not isinstance(text, str) or not text.strip():
         raise ValueError('Vui long nhap yeu cau bao cao.')
     sources, snapshots, names, warnings = _load_sources(input_dir, source_name)
-    if planner_mode() == 'openai':
-        from app.services.ai.openai_planner import plan_with_openai
-        policy_path = Path(input_dir).parent / 'source_policy.json'
-        policy = None
-        if policy_path.exists():
-            if policy_path.stat().st_size > 64 * 1024:
-                raise ValueError('Source policy exceeds 64 KB.')
-            try:
-                policy = json.loads(policy_path.read_text(encoding='utf-8-sig'))
-            except (ValueError, OSError) as exc:
-                raise ValueError('Cau hinh nguon khong hop le.') from exc
-        if source_name is not None and isinstance(policy, dict) and isinstance(policy.get('department_sources'), dict):
-            policy = {**policy, 'department_sources': {k: v for k, v in policy['department_sources'].items() if v in sources}}
-        plan = dict(plan_with_openai(text, sources, source_policy=policy))
-        plan['planner'] = 'openai'
-    else:
-        plan = dict(plan_report(text, sources))
-        if source_name is None:
-            plan = apply_source_policy(input_dir, text, sources, plan)
-        plan['planner'] = 'rules'
+    planner_mode()  # Validate configuration without selecting a local fallback.
+    from app.services.ai.openai_planner import plan_with_openai
+    policy_path = Path(input_dir).parent / 'source_policy.json'
+    policy = None
+    if policy_path.exists():
+        if policy_path.stat().st_size > 64 * 1024:
+            raise ValueError('Source policy exceeds 64 KB.')
+        try:
+            policy = json.loads(policy_path.read_text(encoding='utf-8-sig'))
+        except (ValueError, OSError) as exc:
+            raise ValueError('Cau hinh nguon khong hop le.') from exc
+    if source_name is not None and isinstance(policy, dict) and isinstance(policy.get('department_sources'), dict):
+        policy = {**policy, 'department_sources': {k: v for k, v in policy['department_sources'].items() if v in sources}}
+    plan = dict(plan_with_openai(text, sources, source_policy=policy))
+    plan['planner'] = 'openai'
     plan.update(available_sources=names, warnings=warnings)
     plan.pop('fingerprint', None)
     if plan.get('status') == 'ready':
@@ -157,15 +150,13 @@ def _evidence_warnings(result: dict, config: dict) -> list[str]:
 
 def execute_request(input_dir: Path, project_name: str, text: str,
                     source_name: str | None, fingerprint: str) -> dict:
-    """Replan from fresh bytes and execute only the exact approved snapshot/config."""
-    if planner_mode() == 'openai':
-        from app.services.ai.ai_approval import approved
-        sources, snapshots, _, _ = _load_sources(input_dir, source_name)
-        plan = approved(input_dir, text, source_name, fingerprint, snapshots)
-        if plan is None:
-            raise ValueError('Ke hoach AI khong con trong phien; vui long phan tich lai.')
-    else:
-        plan, sources = _preview(input_dir, text, source_name)
+    """Read fresh bytes and execute only the exact approved AI snapshot/config."""
+    planner_mode()
+    from app.services.ai.ai_approval import approved
+    sources, snapshots, _, _ = _load_sources(input_dir, source_name)
+    plan = approved(input_dir, text, source_name, fingerprint, snapshots)
+    if plan is None:
+        raise ValueError('Ke hoach AI khong con trong phien; vui long phan tich lai.')
     if plan.get('status') != 'ready':
         raise ValueError('Yeu cau chua san sang; hay xem va xac nhan ke hoach truoc.')
     if source_name is not None and plan['source'] != source_name:
@@ -218,7 +209,7 @@ def _render_report(plan: dict, sources: dict, project_name: str,
             'detail_preview': detail_preview,
             'total_rows': len(result['data']), 'files_included': 1,
             'source_file': plan['source'], 'summary': records,
-            'planner': plan.get('planner', 'rules'),
+            'planner': plan.get('planner', 'openai'),
             'selection_reason': plan.get('selection_reason', ''),
             'candidate_sources': plan.get('candidate_sources', [plan['source']]),
             'source_selection': {'mode': 'explicit' if source_name is not None else 'automatic',

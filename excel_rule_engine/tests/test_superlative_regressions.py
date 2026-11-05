@@ -1,12 +1,13 @@
-"""Accented screenshot regressions and bounded superlative safety."""
+"""Historical legacy superlative regressions plus AI-only command integration."""
 import asyncio
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+import json
 
 import pandas as pd
 import pytest
 
-from app.core.analytical_request import is_analytical_request
-from app.core.report_planner import plan_report
+from legacy_nlp.analytical_request import is_analytical_request
+from legacy_nlp.report_planner import plan_report
 from app.services.reports.report_engine import run_report
 
 PRODUCT_REQUEST = 'sản phẩm nào có doanh thu nhỏ nhất'
@@ -86,15 +87,36 @@ def test_unknown_superlative_constraint_does_not_disappear():
     assert plan['config'] is None
 
 
-def test_exact_salary_question_routes_to_preview_not_legacy_export():
+def test_exact_salary_question_routes_to_ai_chat_not_legacy_export(tmp_path, monkeypatch):
     from app.main import handle_command, CommandRequest
+    from app.services.ai.openai_planner import PLAN_SCHEMA, _matches
+    from app.services.ai.chat_agent import _SCHEMA
+    inputs = tmp_path / 'input'
+    inputs.mkdir()
+    employees().to_excel(inputs / 'hr.xlsx', index=False)
+    action = {'action': 'query', 'reply': 'Tinh luong cao nhat.', 'request': EMPLOYEE_REQUEST, 'update': None}
+    plan = {'status': 'ready', 'source': 'hr.xlsx', 'config': {
+        'version': 1, 'filters': [], 'filter_logic': 'and', 'group_by': ['employee_id', 'employee_name'],
+        'metrics': [{'column': 'salary', 'operation': 'sum', 'alias': 'SalarySum'}],
+        'date_group': None, 'top_n': {'column': 'SalarySum', 'n': 1, 'ascending': False, 'offset': 0, 'scope': 'summary'}},
+        'explanation': [], 'questions': [], 'unsupported': []}
+    assert _matches(action, _SCHEMA)
+    assert _matches(plan, PLAN_SCHEMA)
+    def response(payload):
+        return Mock(json=lambda: {'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(payload)}}]})
+    monkeypatch.setenv('OPENAI_API_KEY', 'offline-fixture-key')
     with patch('app.main.ensure_session'), patch('app.main.create_task', return_value=1), \
-         patch('app.main.update_task_status'), patch('app.main.run_export_report') as export, \
-         patch('app.services.reports.conversation_reporting.preview_request', return_value={
-             'status': 'ready', 'source': 'hr.xlsx', 'config': {'version': 1}, 'fingerprint': 'abc'}) as preview:
+         patch('app.main.update_task_status'), patch('app.main.get_input_dir', return_value=inputs), \
+         patch('app.services.reports.conversation_reporting.build_advanced_report_bytes') as export, \
+         patch('requests.post', side_effect=[response(action), response(plan)]) as provider:
         result = asyncio.run(handle_command(CommandRequest(text=EMPLOYEE_REQUEST)))
-    assert result.requires_input['type'] == 'report_plan'
-    preview.assert_called_once()
+    assert result.error is None
+    assert result.parsed['intent'] == 'CHAT'
+    assert result.result['action'] == 'query'
+    assert result.result['result']['summary'] == [{'employee_id': 'e3', 'employee_name': 'Binh', 'SalarySum': 40}]
+    assert result.result['result']['source_file'] == 'hr.xlsx'
+    assert result.result['result']['output_path'] is None
+    assert provider.call_count == 2
     export.assert_not_called()
 
 

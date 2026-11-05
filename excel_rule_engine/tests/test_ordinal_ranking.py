@@ -4,7 +4,7 @@ import copy
 import pandas as pd
 import pytest
 
-from app.core.report_planner import plan_report
+from legacy_nlp.report_planner import plan_report
 from app.services.reports.report_engine import MAX_ROWS, load_config, run_report, serialize_config
 
 

@@ -6,7 +6,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pandas as pd
 from app.workflows.revenue_report import run_revenue_request
-from app.core.command_parser import parse_command
+from legacy_nlp.command_parser import parse_command
 
 REQUEST = 'bao cao doanh thu cua Laptop Pro X nam 2024 la bao nhieu'
 

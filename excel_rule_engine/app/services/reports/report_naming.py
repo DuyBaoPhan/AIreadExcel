@@ -4,7 +4,7 @@ import re
 import unicodedata
 from datetime import date
 from uuid import uuid4
-from app.core.report_planner import SCHEMA_ALIASES, normalize
+from app.services.reports.schema_matching import SCHEMA_ALIASES, normalize
 
 LABELS = {'revenue':'doanh_thu','profit':'loi_nhuan','cost':'chi_phi','quantity':'so_luong',
           'salary':'luong','product':'san_pham','department':'phong_ban','region':'khu_vuc',

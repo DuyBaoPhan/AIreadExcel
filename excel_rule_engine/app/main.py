@@ -18,15 +18,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from app.core.command_parser import parse_command, ParsedCommand
-from app.core.intent_router import Intent
-from app.core.response_generator import (
-    generate_intent_display,
-    generate_workflow_display,
-    generate_success_message,
-    generate_error_message,
-    generate_help,
-)
 from app.database.db import init_db
 from app.database.task_repository import (
     create_task, update_task_status, list_tasks, ensure_session,
@@ -34,10 +25,7 @@ from app.database.task_repository import (
 from app.services.sources.file_manager import (
     get_input_dir, get_output_dir, list_excel_files, file_info, set_projects_root,
 )
-from app.workflows.aggregation import run_aggregation
-from app.workflows.filtering import run_filter
-from app.workflows.comparison import run_comparison, get_primary_key_suggestions
-from app.workflows.report_export import run_export_report
+from app.workflows.comparison import run_comparison
 
 # ─────────────────────────────────────────────
 logging.basicConfig(
@@ -51,7 +39,7 @@ set_projects_root(PROJECTS_DIR)
 
 app = FastAPI(
     title="Excel Rule Engine API",
-    description="Rule-based Python Excel AI System — không dùng LLM",
+    description="OpenAI conversational Excel assistant with deterministic data validation",
     version="1.0.0",
 )
 
@@ -115,206 +103,30 @@ class ExecuteComparisonRequest(BaseModel):
 
 @app.post("/api/command", response_model=CommandResponse)
 async def handle_command(req: CommandRequest) -> CommandResponse:
-    """Nhận câu lệnh tự nhiên, phân tích và thực thi workflow."""
+    """AI-only compatibility adapter for legacy command clients."""
     session_id = req.session_id or str(uuid.uuid4())
     ensure_session(session_id, req.project)
 
     from app.services.ai.planner_settings import planner_mode
-    if planner_mode() == 'openai':
-        from app.services.chat.chat_conversation import chat
-        task_id = create_task(session_id, "CHAT", req.text)
-        try:
-            # New /api/chat clients retain their server-issued conversational id.
-            outcome = chat(get_input_dir(req.project), req.project, req.text)
-            update_task_status(task_id, "done")
-            return CommandResponse(session_id=session_id, task_id=task_id,
-                intent_display="OpenAI chat agent", workflow_display="Conversation",
-                parsed={"intent": "CHAT", "raw_text": req.text, "parameters": {}},
-                result=outcome)
-        except ValueError as exc:
-            update_task_status(task_id, "failed", error_msg=str(exc))
-            return CommandResponse(session_id=session_id, task_id=task_id,
-                intent_display="OpenAI chat agent", workflow_display="Stopped safely",
-                parsed={}, error=str(exc))
-
-    parsed: ParsedCommand = parse_command(req.text)
-
-    task_id = create_task(session_id, parsed.intent, req.text)
-
-    intent_disp = generate_intent_display(parsed)
-    workflow_disp = generate_workflow_display(parsed)
-
-    from app.core.analytical_request import is_analytical_request
-    if is_analytical_request(req.text) and parsed.intent != "DELETE":
-        from app.services.reports.conversation_reporting import preview_request
-        try:
-            plan = preview_request(get_input_dir(req.project), req.text)
-            update_task_status(task_id, "pending")
-            return CommandResponse(
-                session_id=session_id, task_id=task_id,
-                intent_display="Report planner", workflow_display="Preview and confirm",
-                parsed={"intent": "EXPORT", "raw_text": req.text, "parameters": {"report_type": "planned"}},
-                requires_input={"type": "report_plan", "text": req.text, "project": req.project, **plan},
-            )
-        except ValueError as exc:
-            update_task_status(task_id, "failed", error_msg=str(exc))
-            return CommandResponse(session_id=session_id, task_id=task_id,
-                                   intent_display="Report planner", workflow_display="Needs clarification",
-                                   parsed=parsed.to_dict(), error=str(exc))
-
-    # Trường hợp không nhận diện được
-    if parsed.intent == Intent.UNKNOWN or parsed.error_message:
-        update_task_status(task_id, "failed", error_msg=parsed.error_message)
-        return CommandResponse(
-            session_id=session_id,
-            task_id=task_id,
-            intent_display=intent_disp,
-            workflow_display=workflow_disp,
-            parsed=parsed.to_dict(),
-            error=parsed.error_message,
-        )
-
-    # HELP
-    if parsed.intent == "HELP":
-        update_task_status(task_id, "done")
-        return CommandResponse(
-            session_id=session_id,
-            task_id=task_id,
-            intent_display=intent_disp,
-            workflow_display=workflow_disp,
-            parsed=parsed.to_dict(),
-            result={"help_text": generate_help()},
-        )
-
-    # DELETE → yêu cầu xác nhận nhưng không thực hiện
-    if parsed.intent == "DELETE":
-        update_task_status(task_id, "blocked", error_msg="DELETE blocked")
-        return CommandResponse(
-            session_id=session_id,
-            task_id=task_id,
-            intent_display=intent_disp,
-            workflow_display=workflow_disp,
-            parsed=parsed.to_dict(),
-            error=parsed.error_message,
-        )
-
-    # Thực thi workflow
+    from app.services.chat.chat_conversation import chat
+    task_id = create_task(session_id, "CHAT", req.text)
     try:
-        result = await _execute_workflow(parsed, req.project, session_id, task_id)
-        return CommandResponse(
-            session_id=session_id,
-            task_id=task_id,
-            intent_display=intent_disp,
-            workflow_display=workflow_disp,
-            parsed=parsed.to_dict(),
-            result=result.get("result"),
-            requires_input=result.get("requires_input"),
-        )
-    except Exception as exc:
-        logger.exception("Workflow error: %s", exc)
-        update_task_status(task_id, "failed", error_msg=str(exc))
-        return CommandResponse(
-            session_id=session_id,
-            task_id=task_id,
-            intent_display=intent_disp,
-            workflow_display=workflow_disp,
-            parsed=parsed.to_dict(),
-            error=str(exc),
-        )
-
-
-async def _execute_workflow(
-    parsed: ParsedCommand,
-    project: str,
-    session_id: str,
-    task_id: int,
-) -> dict[str, Any]:
-    """Điều phối workflow dựa trên intent."""
-    params = parsed.parameters
-    input_dir = get_input_dir(project)
-
-    if parsed.intent == "AGGREGATION":
-        result = run_aggregation(
-            input_dir=input_dir,
-            project_name=project,
-            specific_files=params.get("specific_files", []),
-        )
-        update_task_status(task_id, "done", result_path=result["output_path"])
-        return {"result": result}
-
-    if parsed.intent == "FILTER":
-        column = params.get("column")
-        operator = params.get("operator")
-        value = params.get("value")
-
-        if not all([column, operator, value is not None]):
-            return {
-                "requires_input": {
-                    "type": "filter_params",
-                    "missing": {
-                        "column": column is None,
-                        "operator": operator is None,
-                        "value": value is None,
-                    },
-                    "message": parsed.error_message or "Thiếu thông tin để lọc.",
-                }
-            }
-
-        result = run_filter(
-            input_dir=input_dir,
-            project_name=project,
-            column=column,
-            operator=operator,
-            value=value,
-        )
-        update_task_status(task_id, "done", result_path=result["output_path"])
-        return {"result": result}
-
-    if parsed.intent == "COMPARISON":
-        file_names = params.get("file_names", [])
-        root_file = next((f for f in file_names if "root" in f.lower()), None)
-        update_file = next((f for f in file_names if "update" in f.lower()), None)
-
-        # Yêu cầu primary key
-        suggestions = get_primary_key_suggestions(input_dir)
-        return {
-            "requires_input": {
-                "type": "primary_key",
-                "suggestions": suggestions,
-                "root_file": root_file,
-                "update_file": update_file,
-                "task_id": task_id,
-                "message": (
-                    "Vui lòng xác định Primary Key để so sánh. "
-                    f"Gợi ý: {suggestions if suggestions else ['employee_id', 'id']}"
-                ),
-            }
-        }
-
-    if parsed.intent == "EXPORT":
-        if params.get("report_type") == "revenue":
-            from app.workflows.revenue_report import run_revenue_request
-            result = run_revenue_request(input_dir, project, parsed.raw_text)
-        else:
-            result = run_export_report(input_dir=input_dir, project_name=project)
-        update_task_status(task_id, "done", result_path=result["output_path"])
-        return {"result": result}
-
-    if parsed.intent == "FILE_LIST":
-        folder = params.get("folder", "input")
-        target_dir = input_dir if folder == "input" else get_output_dir(project)
-        files = list_excel_files(target_dir)
-        file_details = [file_info(f) for f in files]
+        planner_mode()  # Reject retired modes; never fall back to local NLP.
+        # New /api/chat clients retain their server-issued conversational id.
+        outcome = chat(get_input_dir(req.project), req.project, req.text, req.session_id)
+        session_id = outcome.get("session_id", session_id)
+        ensure_session(session_id, req.project)
         update_task_status(task_id, "done")
-        return {
-            "result": {
-                "files": [f["name"] for f in file_details],
-                "file_details": file_details,
-                "folder": str(target_dir),
-            }
-        }
+        return CommandResponse(session_id=session_id, task_id=task_id,
+            intent_display="OpenAI chat agent", workflow_display="Conversation",
+            parsed={"intent": "CHAT", "raw_text": req.text, "parameters": {}},
+            result=outcome)
+    except ValueError as exc:
+        update_task_status(task_id, "failed", error_msg=str(exc))
+        return CommandResponse(session_id=session_id, task_id=task_id,
+            intent_display="OpenAI chat agent", workflow_display="Stopped safely",
+            parsed={}, error=str(exc))
 
-    raise ValueError(f"Không có workflow cho intent: {parsed.intent}")
 
 
 @app.post("/api/execute/comparison", response_model=CommandResponse)
@@ -322,6 +134,13 @@ async def execute_comparison(req: ExecuteComparisonRequest) -> CommandResponse:
     """Thực thi comparison sau khi người dùng cung cấp primary key."""
     input_dir = get_input_dir(req.project)
     try:
+        # Explicit API arguments are filenames, never arbitrary filesystem paths.
+        root = input_dir.resolve()
+        listed = {p.name for p in list_excel_files(input_dir)}
+        for name in (req.root_file, req.update_file):
+            if name is not None and (name not in listed or
+                    not (input_dir / name).resolve().is_relative_to(root)):
+                raise ValueError("Comparison source must be an exact filename inside project input.")
         result = run_comparison(
             input_dir=input_dir,
             project_name=req.project,
@@ -395,7 +214,7 @@ async def get_tasks(session_id: str):
 @app.get("/")
 async def root():
     return {
-        "system": "Excel Rule Engine API (Rule-based NLP, No LLM)",
+        "system": "Excel Assistant API (OpenAI)",
         "status": "running",
         "chatbot_ui": "http://localhost:8501",
         "docs": "http://localhost:8000/docs"

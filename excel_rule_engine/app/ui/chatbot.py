@@ -176,93 +176,23 @@ def process_command(user_text: str):
     st.session_state.pending_report = None
     add_message("user", user_text)
 
-    if st.session_state.get("ai_planner_enabled", False):
-        st.session_state.pending_update = None
-        with st.spinner("Dang trao doi voi tro ly..."):
-            response = call_api("/api/chat", {"text": user_text, "project": st.session_state.project,
-                "session_id": st.session_state.get("agent_session_id")})
-        if not response or response.get("error"):
-            add_message("assistant", str((response or {}).get("error", "Khong co phan hoi.")))
-            return
-        st.session_state.agent_session_id = response["session_id"]
-        result = response.get("result") or {}
-        add_message("assistant", response.get("reply", ""), {
-            "project": st.session_state.project, "applied_filters": result.get("applied_filters"), "citations": response.get("citations", []), "output_path": result.get("output_path"),
-            "summary": result.get("summary", []), "detail_preview": result.get("detail_preview", []),
-            "total_rows": result.get("total_rows"), "warnings": result.get("warnings", [])})
-        if response.get("update_proposal"):
-            st.session_state.pending_update = response["update_proposal"]
+    st.session_state.pending_update = None
+    with st.spinner("Dang trao doi voi tro ly..."):
+        response = call_api("/api/chat", {"text": user_text, "project": st.session_state.project,
+            "session_id": st.session_state.get("agent_session_id")})
+    if not response or response.get("error"):
+        add_message("assistant", str((response or {}).get("error", "Khong co phan hoi.")))
         return
+    st.session_state.agent_session_id = response["session_id"]
+    result = response.get("result") or {}
+    add_message("assistant", response.get("reply", ""), {
+        "project": st.session_state.project, "applied_filters": result.get("applied_filters"), "citations": response.get("citations", []), "output_path": result.get("output_path"),
+        "summary": result.get("summary", []), "detail_preview": result.get("detail_preview", []),
+        "total_rows": result.get("total_rows"), "warnings": result.get("warnings", [])})
+    if response.get("update_proposal"):
+        st.session_state.pending_update = response["update_proposal"]
+    return
 
-    from app.core.analytical_request import is_analytical_request
-    if is_analytical_request(user_text):
-        automatic = st.session_state.get("auto_reports", True)
-        endpoint = "/api/report/auto" if automatic else "/api/report/preview"
-        with st.spinner("Đang chọn nguồn và xử lý yêu cầu..."):
-            response = call_api(endpoint, {
-                "text": user_text, "project": st.session_state.project,
-            })
-        if not response or response.get("error"):
-            add_message("assistant", "Không thể xử lý báo cáo. Nếu gặp HTTP 404 trên Streamlit Cloud: cập nhật mã lên đúng nhánh và Reboot app. Không chạy thay bằng gộp file.\n\n" + str((response or {}).get("error", "Không có phản hồi.")))
-        elif response.get("result"):
-            _handle_success_result("EXPORT", response["result"], {})
-        else:
-            plan = response.get("report_plan", response.get("requires_input", response))
-            _handle_requires_input({"type": "report_plan", "text": user_text,
-                                    "project": st.session_state.project, **plan}, {}, {})
-        return
-    with st.spinner("Đang xử lý..."):
-        response = call_api("/api/command", {
-            "text": user_text,
-            "session_id": st.session_state.session_id,
-            "project": st.session_state.project,
-        })
-
-    if not response:
-        add_message("assistant", "❌ Không nhận được phản hồi từ server.")
-        return
-
-    if "error" in response and response.get("intent_display") is None:
-        # Connection error
-        add_message("assistant", response["error"])
-        return
-
-    intent_display = response.get("intent_display", "")
-    workflow_display = response.get("workflow_display", "")
-    parsed = response.get("parsed", {})
-    error = response.get("error")
-    result = response.get("result")
-    requires_input = response.get("requires_input")
-
-    meta = {
-        "intent_display": intent_display,
-        "workflow_display": workflow_display,
-        "parsed": parsed,
-        "project": st.session_state.project,
-    }
-
-    # ── Error ──
-    if error and not result:
-        add_message("assistant", f"⚠️ {error}", meta)
-        return
-
-    # ── HELP ──
-    if result and "help_text" in result:
-        add_message("assistant", result["help_text"], meta)
-        return
-
-    # ── Requires more input (multi-turn) ──
-    if requires_input:
-        _handle_requires_input(requires_input, meta, response)
-        return
-
-    # ── Success ──
-    if result:
-        _handle_success_result(parsed.get("intent", ""), result, meta)
-
-    if error:
-        meta_copy = {**meta}
-        add_message("assistant", f"⚠️ {error}", meta_copy)
 
 
 def _handle_requires_input(
@@ -428,12 +358,11 @@ def backend_online() -> bool:
 
 
 online = backend_online()
-# Read server mode: AI routing must not be gated by keyword detection.
+# Read server configuration for display only; chat routing is always AI-only.
 try:
     planner_info = requests.get(f"{API_BASE}/api/planner/status", timeout=3).json() if online else {}
 except (requests.RequestException, ValueError):
     planner_info = {}
-st.session_state.ai_planner_enabled = planner_info.get("planner") == "openai"
 
 with st.sidebar:
     render_sidebar_brand()
@@ -486,16 +415,10 @@ with st.sidebar:
                     except requests.RequestException:
                         st.error("Không thể thêm nguồn; kiểm tra tên tệp trùng, định dạng hoặc giới hạn 20 tệp / 40 MB.")
 
-        if st.session_state.get("ai_planner_enabled", False):
-            st.caption("OpenAI + RAG: truy xuất Excel cục bộ; các đoạn bằng chứng liên quan được gửi lên OpenAI để trả lời có dẫn nguồn.")
-            if not planner_info.get("configured"):
-                st.warning("Chưa cấu hình OPENAI_API_KEY trong backend / Streamlit Secrets.")
-        else:
-            st.caption("Đang dùng bộ quy tắc offline. Cấu hình OPENAI_API_KEY để bật AI agent, sau đó Reboot app.")
-
+        st.caption("OpenAI + RAG: truy xuất Excel cục bộ; bằng chứng liên quan được gửi lên OpenAI để trả lời có dẫn nguồn.")
+        if not planner_info.get("configured"):
+            st.warning("Chưa cấu hình AI. Hãy đặt REPORT_PLANNER=openai và OPENAI_API_KEY trong backend / Streamlit Secrets; không có chế độ quy tắc dự phòng.")
         st.caption("File upload trong công cụ báo cáo được xử lý riêng, không tự thêm vào nguồn chatbot.")
-        st.checkbox("Tự động tạo báo cáo khi yêu cầu rõ ràng", value=True, disabled=st.session_state.get("ai_planner_enabled", False), key="auto_reports")
-        st.caption("Chỉ hỏi lại khi nguồn hoặc phép tính còn mơ hồ. Tắt để xem và xác nhận kế hoạch trước khi xuất.")
         if st.button("↻ Làm mới kết nối & file", key="refresh_workspace", use_container_width=True):
             _load_download_data.clear()
             st.rerun()

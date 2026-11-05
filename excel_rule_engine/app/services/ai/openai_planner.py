@@ -120,7 +120,7 @@ def _clarify():
 
 def _resolve_columns(config, frame):
     """Resolve only uniquely mapped schema synonyms; never invent or drop a field."""
-    from app.core.report_planner import normalize, SCHEMA_ALIASES
+    from app.services.reports.schema_matching import normalize, SCHEMA_ALIASES
     available = list(frame.columns)
     derived = config.get('date_group', {}).get('alias')
 
@@ -260,7 +260,7 @@ def plan_with_openai(text, sources, source_policy=None):
                 except ValueError:
                     pass
             if len(candidates) > 1:
-                from app.core.report_planner import normalize, SCHEMA_ALIASES
+                from app.services.reports.schema_matching import normalize, SCHEMA_ALIASES
                 departments = {normalize(c) for c in SCHEMA_ALIASES['department']}
                 matches = {name for department, name in (source_policy or {}).get('department_sources', {}).items()
                            if any(normalize(f['column']) in departments and f['operator'] == 'eq'

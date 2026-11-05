@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from app.core.report_planner import normalize, plan_report, SCHEMA_ALIASES
+from legacy_nlp.report_planner import normalize, plan_report, SCHEMA_ALIASES
 
 
 def apply_source_policy(input_dir, text, sources, plan):

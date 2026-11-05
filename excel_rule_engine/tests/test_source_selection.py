@@ -2,7 +2,7 @@
 import pandas as pd
 import pytest
 
-from app.core.report_planner import plan_report
+from legacy_nlp.report_planner import plan_report
 
 
 def sales(products=('Printer', 'Keyboard'), dates=('2025-01-01', '2025-02-01')):
