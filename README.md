@@ -365,9 +365,9 @@ Current retrieval limits: 20 input files, 40 MB total raw bytes, 200 MB expanded
 
 ## Contextual report filenames
 
-Conversational exports (automatic and manual approval) derive filenames from validated report configuration: measures/operations, grouping, ranking/position, department code and date/month/quarter/year ranges. Example: `Bao_cao_doanh_thu_2024-10__<unique-id>.xlsx`. Query-only turns do not create files. Download uses the actual output basename, so the descriptive name is retained.
+Conversational exports use concise business names from validated config: `Doanh_thu_2024-10.xlsx`, `Top5_doanh_thu_san_pham_2024.xlsx`, or `Nhan_vien_IT.xlsx`. Names keep the main measure, a grouping dimension where useful, ranking and reporting period; multi-measure reports use a short summary title. Query-only turns do not create files. Downloads retain the actual filename.
 
-Names are ASCII/Windows-safe and length-bounded; device names and separators are excluded. A full random UUID suffix plus exclusive file creation prevents overwriting existing outputs. Names do not use arbitrary model aliases, source filenames or row-level personal/salary filter values. Unknown columns use a generic business label. This does not add free-form user-specified names or change legacy standalone wizard naming.
+Names are ASCII/Windows-safe and length-bounded; device names and separators are excluded. No UUID is appended. If the name already exists, the writer tries `_2`, `_3`, and so on using exclusive file creation, which also prevents overwrites during simultaneous exports. The descriptive stem is bounded to 90 characters (plus a numeric collision suffix and extension). Names do not use arbitrary model aliases, source filenames or row-level personal/salary filter values. Unknown columns use a generic business label. This does not add free-form user-specified names or change legacy standalone wizard naming.
 
 ## Sidebar conversation history
 

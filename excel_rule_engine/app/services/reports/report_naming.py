@@ -3,13 +3,13 @@ import calendar
 import re
 import unicodedata
 from datetime import date
-from uuid import uuid4
 from app.services.reports.schema_matching import SCHEMA_ALIASES, normalize
 
 LABELS = {'revenue':'doanh_thu','profit':'loi_nhuan','cost':'chi_phi','quantity':'so_luong',
           'salary':'luong','product':'san_pham','department':'phong_ban','region':'khu_vuc',
           'status':'trang_thai','employee_id':'nhan_vien','employee_name':'nhan_vien','order_id':'don_hang'}
-OPS = {'mean':'trung_binh','min':'nho_nhat','max':'lon_nhat','count':'dem','nunique':'dem_duy_nhat','rows':'dem_dong'}
+OPS = {'mean':'TB','min':'min','max':'max','count':'dem','nunique':'dem','rows':'dem'}
+MAX_REPORT_STEM = 90
 
 
 def _key(column):
@@ -38,7 +38,7 @@ def _period(start,end):
     if a.day==1 and a.month in (1,4,7,10) and b.year==a.year and b.month==a.month+2 and b.day==calendar.monthrange(b.year,b.month)[1]:
         return f'Q{(a.month-1)//3+1}_{a.year}'
     if a==b:return a.isoformat()
-    return f'{a.isoformat()}_den_{b.isoformat()}'
+    return f'{a.isoformat()}_{b.isoformat()}'
 
 
 def report_stem(config, columns):
@@ -47,27 +47,36 @@ def report_stem(config, columns):
     parts=[]
     employee=any(_key(c) in {'employee_id','employee_name'} for c in columns)
     if not metrics and not config.get('pivot'):
-        parts=['Danh_sach','nhan_vien' if employee else 'du_lieu']
+        parts=['Nhan_vien' if employee else 'Du_lieu']
     else:
-        parts=['Bao_cao']
         for m in metrics:
             key=_key(m.get('column',''))
             label=LABELS.get(key,'du_lieu')
-            if m['operation'] in OPS:label=OPS[m['operation']]+'_'+label
+            operation=m['operation']
+            if operation in {'rows','count','nunique'}:
+                label='So_nhan_vien' if employee and key in {None,'employee_id','employee_name'} else 'Dem_'+label
+            elif operation in OPS:
+                label=label+'_'+OPS[operation]
             if label not in parts:parts.append(label)
-        if config.get('pivot'):parts+=['pivot',LABELS.get(_key(config['pivot'].get('values','')),'du_lieu')]
+        if config.get('pivot'):
+            parts += [LABELS.get(_key(config['pivot'].get('values','')),'du_lieu'), 'pivot']
+        # Keep a multi-measure report readable rather than enumerate every metric.
+        if len(parts)>2:parts=parts[:2]+['tong_hop']
     top=config.get('top_n')
     if top:
         position=top.get('offset',0)
-        ranking=f'Hang_{position+1}' if top['n']==1 and position else f'Top_{top["n"]}'
-        parts=[ranking]+parts+['thap_nhat' if top.get('ascending',False) else 'cao_nhat']
+        ranking=f'Hang{position+1}' if top['n']==1 and position else f'Top{top["n"]}'
+        parts=[ranking]+parts
+        if top.get('ascending',False):parts.append('thap')
     groups=[]
     for c in config.get('group_by',[]):
         label=LABELS.get(_key(c))
-        if c==config.get('date_group',{}).get('alias'):
-            label={'day':'ngay','month':'thang','quarter':'quy','year':'nam'}.get(config['date_group']['frequency'])
+        date_group=config.get('date_group') or {}
+        if c==date_group.get('alias'):
+            label={'day':'ngay','month':'thang','quarter':'quy','year':'nam'}.get(date_group['frequency'])
         if label and label not in groups:groups.append(label)
-    if groups:parts+=['theo']+groups
+    # One business dimension usually distinguishes reports; omit verbose "theo".
+    if groups:parts+=groups[:1]
     # Do not put arbitrary filter values (names, emails, salaries) in filenames.
     # Department codes are included only if short safe business identifiers.
     for f in config.get('filters',[]):
@@ -102,14 +111,23 @@ def report_stem(config, columns):
                 if period and period not in periods:periods.append(period)
     comparison=config.get('comparison')
     if comparison:
-        parts.append('so_sanh')
+        parts.append('vs')
         for prefix in ('current','previous'):
             period=_period(comparison[prefix+'_start'],comparison[prefix+'_end'])
             if period:periods.append(period)
-    parts+=periods
-    return safe_stem('_'.join(parts))
+    # Preserve the reporting period even when several measures make the title long.
+    title=safe_stem('_'.join(parts))
+    suffix='_'.join(periods)
+    if suffix:
+        suffix=suffix[:60].rstrip('_-')
+        title=title[:MAX_REPORT_STEM-len(suffix)-1].rstrip('_-')+'_'+suffix
+    title=title[:MAX_REPORT_STEM].rstrip('_-')
+    return title[:1].upper()+title[1:]
 
 
-def report_filename(config,columns):
-    # Full UUID plus exclusive creation protects against overwriting existing output.
-    return report_stem(config,columns)+'__'+uuid4().hex+'.xlsx'
+def report_filename(config, columns, sequence=1):
+    """Short descriptive name; the writer reserves it exclusively before use."""
+    if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 1:
+        raise ValueError('Report sequence must be a positive integer.')
+    suffix='' if sequence == 1 else f'_{sequence}'
+    return report_stem(config, columns)+suffix+'.xlsx'

@@ -202,9 +202,19 @@ def _render_report(plan: dict, sources: dict, project_name: str,
     # Render and serialize fully before creating a unique output.
     output = None
     if export:
-        output = safe_output_path(project_name, report_filename(config, list(sources[plan['source']].columns)))
-        with output.open('xb') as stream:
-            stream.write(blob)
+        columns = list(sources[plan['source']].columns)
+        for sequence in range(1, 10001):
+            candidate = safe_output_path(project_name, report_filename(config, columns, sequence))
+            try:
+                stream = candidate.open('xb')
+            except FileExistsError:
+                continue
+            with stream:
+                stream.write(blob)
+            output = candidate
+            break
+        else:
+            raise ValueError('Too many reports with the same name; archive old reports and retry.')
     return {'output_path': str(output) if output else None, 'output_filename': output.name if output else None, 'report_type': 'planned',
             'detail_preview': detail_preview,
             'total_rows': len(result['data']), 'files_included': 1,
