@@ -505,17 +505,16 @@ else:
     pending_update = st.session_state.get("pending_update")
     if pending_update:
         with st.container(border=True):
-            st.subheader("Xác nhận sửa trực tiếp tệp nguồn")
-            st.json(pending_update["preview"])
-            st.warning("Chỉ ghi sau khi xác nhận. Hệ thống sẽ lưu bản sao lưu trước khi thay thế tệp.")
+            from app.ui.source_update_ui import render_update_preview
+            render_update_preview(pending_update["preview"])
             yes, no = st.columns(2)
-            if yes.button("Xác nhận cập nhật", key="confirm_source_update", type="primary"):
+            if yes.button("Xác nhận cập nhật", key="confirm_source_update", type="primary", use_container_width=True):
                 outcome = call_api("/api/chat/update/confirm", {"project": st.session_state.project,
                     "session_id": st.session_state.agent_session_id, "token": pending_update["token"]})
                 add_message("assistant", (outcome or {}).get("reply", (outcome or {}).get("error", "Khong co phan hoi.")))
                 st.session_state.pending_update = None
                 st.rerun()
-            if no.button("Hủy thay đổi", key="cancel_source_update"):
+            if no.button("Hủy thay đổi", key="cancel_source_update", use_container_width=True):
                 call_api("/api/chat/update/cancel", {"project": st.session_state.project,
                     "session_id": st.session_state.agent_session_id, "token": pending_update["token"]})
                 st.session_state.pending_update = None

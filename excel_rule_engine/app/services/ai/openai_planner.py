@@ -53,6 +53,18 @@ top_n=null. Use quoted strings and schema keys in actual JSON.
 For date_group use a NEW alias (e.g. ReportYear), not an existing source column;
 include that alias in group_by. Do not group by a metric alias or invent a column for a year.
 A plain annual report does not require ranking or top_n.
+DETAIL VERSUS AGGREGATION: Listing or exporting matching records is a detail report,
+not a count of non-null cells. For a request for employees satisfying conditions, return
+metrics=[], group_by=[], date_group=null, top_n=null unless ranking/grouping is explicitly
+requested. Preserve each matching source row and its original columns. Never add count,
+rows, nunique, sum or other metrics merely because the user says report, export or employees.
+Use counts only when the requested result is explicitly a number/count; never count every
+source column as a substitute for returning a list.
+Example: "xuat cac nhan vien co luong duoi 20tr o phong IT" means detail rows with
+salary lt 20000000 (number) AND department eq IT (text), using exact catalog column names,
+metrics=[], group_by=[], date_group=null, top_n=null. "duoi" is strict lt, not le.
+If a required column/value is ambiguous, clarify rather than remove a condition.
+
 Catalog has no row samples; do not infer data contents, missing years, coverage or data authority.
 Honor exact explicit source choice. Do not choose an arbitrary file, first file, largest file,
 Root or Update by filename. Multiple equally suitable sources require clarify, unless a supplied

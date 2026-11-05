@@ -38,7 +38,7 @@ Final conversational verification: **1,109 tests passed; 73 subtests passed**. F
 
 ## AI-only migration
 
-Production no longer imports keyword intent routing, entity extraction, analytical-request regex gates or the deterministic natural-language planner. The old implementation is isolated in `excel_rule_engine/legacy_nlp/` solely for historical regression evaluation. Existing historical test totals above do not establish current OpenAI language accuracy.
+Production no longer imports keyword intent routing, entity extraction, analytical-request regex gates or the deterministic natural-language planner. The retired implementation, dedicated NLP benchmarks and audit files have now been removed. Existing historical test totals above do not establish current OpenAI language accuracy.
 
 Chat UI always calls `/api/chat`; `/api/command` is an AI compatibility adapter. Conversational report preview/auto use the OpenAI structured planner and confirmation executes the frozen approved config without re-planning. `REPORT_PLANNER=openai` is the default; `auto` is an alias; `rules` fails explicitly. Missing credentials/API failure never activate local keyword routing. Column aliases/normalization now live in `app/services/reports/schema_matching.py`; these validate references/name outputs, not classify user intent. Explicit source ambiguity and configured source-authority checks remain protective vetoes, not alternative language planners.
 

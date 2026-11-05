@@ -26,7 +26,7 @@ Presentation modules live under `app/ui/`; service modules have been extracted i
 
 ## Tests and utilities
 
-Tests remain under `excel_rule_engine/tests/`; root `pytest.ini` supplies the import path and test discovery configuration. Data generation, manual scenario checks and the opt-in live RAG smoke test live in root `scripts/`. The benchmark case catalog remains with tests because it is a test fixture.
+Tests remain under `excel_rule_engine/tests/`; root `pytest.ini` supplies the import path and test discovery configuration. Data generation, manual scenario checks and the opt-in live RAG smoke test live in root `scripts/`. The retired keyword/regex NLP implementation and its dedicated benchmarks have been removed.
 
 Repository reorganization does not change data-retention, authorization or AI-provider privacy boundaries; see the README for those operational constraints.
 
@@ -59,7 +59,6 @@ AIreadExcel/
     |   |   `-- runtime/
     |   |-- database/
     |   `-- workflows/
-    |-- legacy_nlp/              # Historical offline benchmark code, never imported by app
     |-- tests/
     |-- examples/                 # Sample report configurations
     `-- projects/                 # Existing inputs, policies and generated outputs
@@ -72,7 +71,6 @@ The existing local virtual environment and SQLite database stay in place and are
 ```bash
 python main.py
 python -m pytest -q
-python scripts/run_test_cases.py
 # These create demo workbooks; do not run against user-owned input files:
 python scripts/create_sample_data.py
 python scripts/create_advanced_reports.py
@@ -86,4 +84,4 @@ Existing root launch commands and the Cloud entrypoint are unchanged. Internal P
 
 The chatbot and conversational report endpoints use OpenAI structured outputs. `REPORT_PLANNER` defaults to `openai`; `auto` remains an alias with identical behavior. `rules` is rejected. Missing API credentials and provider errors fail explicitly, with no regex, fuzzy intent or rule-planner fallback. Python still validates sources, columns, types, operations, write proposals and approval tokens; these safety checks are independent of language understanding and are retained. Manual report wizards may execute explicit configurations without asking a language model.
 
-Legacy offline NLP benchmarks are historical regression material, not evidence of current OpenAI semantic accuracy.
+The retired offline NLP package, dedicated benchmark tests and audit files have been removed. Current mocked provider tests establish contracts, not live OpenAI semantic accuracy.

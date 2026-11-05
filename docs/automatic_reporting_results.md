@@ -1,3 +1,5 @@
+> Historical implementation notes. The retired NLP parser and its dedicated benchmarks have been deleted; current conversational requests use OpenAI-only routing. See README for current behavior.
+
 # Automatic reporting verification — 2026-11-03
 
 ## Scope

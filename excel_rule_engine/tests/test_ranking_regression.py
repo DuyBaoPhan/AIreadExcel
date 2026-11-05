@@ -4,20 +4,9 @@ import tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.services.sources.file_manager import list_excel_files
-from legacy_nlp.analytical_request import is_analytical_request
-from legacy_nlp.report_planner import plan_report
 import pandas as pd
 
 class TestRankingRegression(unittest.TestCase):
-    def test_exact_screenshot_request(self):
-        text = 'top 3 sản phẩm có doanh thu cao nhất'
-        self.assertTrue(is_analytical_request(text))
-        frame = pd.DataFrame({'product':['A','A','B','C','D'], 'revenue':[10,20,50,40,1]})
-        plan = plan_report(text, {'sales.xlsx':frame})
-        self.assertEqual(plan['status'],'ready',plan)
-        from app.services.reports.report_engine import run_report
-        result = run_report(frame,plan['config'])
-        self.assertEqual(result['summary']['product'].tolist(),['B','C','A'])
 
     def test_excel_lock_files_excluded(self):
         with tempfile.TemporaryDirectory() as tmp:

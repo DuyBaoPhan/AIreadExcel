@@ -33,7 +33,7 @@ def test_production_import_graph_excludes_legacy_nlp():
     legacy = {'command_parser', 'intent_router', 'entity_extractor',
               'analytical_request', 'report_planner', 'response_generator',
               'source_policy', 'legacy_nlp'}
-    # The historical archive lives outside app; no production module is exempt.
+    # Retired NLP code has been deleted; prevent reintroducing it into production.
     for path in root.rglob('*.py'):
         tree = ast.parse(path.read_text(encoding='utf-8-sig'))
         for node in ast.walk(tree):
@@ -94,3 +94,10 @@ def test_explicit_comparison_rejects_unlisted_sources(tmp_path, name):
         result = asyncio.run(main.execute_comparison(req))
     assert result.error
     compare.assert_not_called()
+
+
+def test_retired_nlp_package_is_removed():
+    engine = Path(__file__).resolve().parents[1]
+    assert not (engine / "legacy_nlp").exists()
+    assert not (engine / "app/workflows/revenue_report.py").exists()
+    assert not (engine.parent / "scripts/run_test_cases.py").exists()

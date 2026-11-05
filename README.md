@@ -25,7 +25,6 @@ AIreadExcel/
     |   |-- services/         # ai, chat, excel, reports, sources, runtime
     |   |-- database/         # SQLite persistence
     |   `-- workflows/        # Deterministic data processing
-    |-- legacy_nlp/           # Historical offline benchmarks only
     |-- tests/
     |-- examples/             # Report configuration samples
     `-- projects/             # Existing source files and report outputs
@@ -178,21 +177,15 @@ python -m pytest
 
 ## 🗺️ Flow xử lý câu lệnh
 
+```text
+User message
+    -> OpenAI structured conversation action
+    -> OpenAI report plan or grounded retrieval, when required
+    -> Python schema/source/approval validation
+    -> Local pandas/OpenPyXL execution
+    -> Vietnamese response and optional report download
 ```
-Người dùng nhập câu lệnh
-        ↓
-[OpenAI agent] - Structured action and report configuration
-        ↓
-[Entity Extractor] - Cột, toán tử, giá trị, tên file
-        ↓
-[Command Parser] - Tạo ParsedCommand (Pydantic)
-        ↓
-[Workflow Engine] - Chọn workflow phù hợp
-        ↓
-[Excel Processing] - Pandas + OpenPyXL
-        ↓
-[Response Generator] - Trả kết quả + file output
-```
+
 
 
 ## Tạo báo cáo từ file upload
@@ -244,44 +237,6 @@ Theme dark/cyan tự chứa, không gọi font/CDN ngoài; có trạng thái foc
 Danh sách thư viện dùng chung nằm tại `requirements.txt` ở gốc repository. Bản `excel_rule_engine/requirements.txt` tham chiếu danh sách đó bằng `-r ../requirements.txt`, nên có thể tiếp tục cài từ cả hai thư mục mà không duy trì hai bộ phiên bản khác nhau. Giữ nguyên chính sách khoảng phiên bản của bản gốc; đây chưa phải lockfile tái lập môi trường.
 
 File sinh trong `excel_rule_engine/projects/*/output/` được Git bỏ qua, ngoại trừ `.gitkeep`. Các báo cáo cũ đã được bỏ theo dõi trong index, không xóa file trên máy thực hiện dọn dẹp và không viết lại lịch sử Git. Sau khi commit/pull thay đổi này ở máy khác, các bản output từng được theo dõi có thể bị Git xóa tại đó; sao lưu báo cáo cần giữ trước khi cập nhật. Có thể tạo lại mẫu bằng `python scripts/create_advanced_reports.py` from the repository root.
-
-## Chatbot hiểu yêu cầu báo cáo theo dữ liệu (không LLM)
-
-> Historical offline implementation/benchmark only. This is not the production chatbot routing path. Current requests require OpenAI; these older scores do not measure OpenAI accuracy.
-
-Yêu cầu phân tích cụ thể được chuyển sang bộ lập kế hoạch dựa trên tên cột và giá trị thật của file, không còn chỉ bắt từ “báo cáo” rồi gộp toàn bộ nguồn. Chatbot hiển thị nguồn, chỉ tiêu, nhóm và điều kiện; người dùng phải bấm **Xác nhận và tạo báo cáo**. Khi có nhiều nguồn phù hợp, chọn nguồn và phân tích lại; khi câu còn mơ hồ, gửi lại câu đầy đủ đã làm rõ. Đây chưa phải hội thoại suy luận tự do.
-
-Các mẫu câu trong phạm vi hỗ trợ:
-- “Báo cáo doanh thu của Laptop Pro X năm 2024 là bao nhiêu?”
-- “Tổng doanh thu theo sản phẩm năm 2024”
-- “Lợi nhuận theo khu vực”
-- “Doanh thu trung bình theo sản phẩm”
-- “Lương trung bình theo phòng ban IT”
-- “Đếm nhân viên theo phòng ban” (đếm mã nhân viên duy nhất)
-- “Đếm dòng doanh thu từ 10 đến 30 triệu”
-- “Top 5 sản phẩm doanh thu cao nhất”
-
-Tên sản phẩm/phòng ban/khu vực/trạng thái được khớp từ dữ liệu thật, không hard-code. Tên cột có thể Việt/Anh theo từ điển `SCHEMA_ALIASES` trong `excel_rule_engine/app/services/reports/schema_matching.py`. Chuẩn hóa dấu chỉ dùng khi nhận diện; bộ lọc giữ giá trị gốc. Nhiều cột đồng nghĩa hoặc nhiều nguồn đều cần làm rõ. Giá trị tháng YYYY-MM có thể lọc năm; tháng không có năm không được tự suy đoán, trừ khi nguồn xác định duy nhất một năm (hiển thị kế hoạch để kiểm tra).
-
-Chưa hỗ trợ qua câu tự nhiên: dự báo, nối nhiều nguồn, so sánh kỳ, điều kiện OR/loại trừ phức tạp, công thức nghiệp vụ tùy ý hoặc nối tiếp ngữ cảnh kiểu “còn tháng trước?”. Sử dụng Báo cáo nâng cao cho các phép toán có giao diện tương ứng. Nếu còn cụm điều kiện chưa nhận diện, chatbot phải hỏi/từ chối, không xuất thay bằng báo cáo tổng hợp. Các câu xuất tổng hợp chung rõ ràng vẫn dùng luồng cũ.
-
-Xác nhận gắn với dấu kiểm tra SHA-256 của yêu cầu, nguồn và cấu hình. Dữ liệu thay đổi cần xem/xác nhận lại; đây là kiểm tra tính nhất quán, **không phải đăng nhập hoặc phân quyền**. Tối đa 20 nguồn/40 MB tổng; chatbot đọc sheet đầu, muốn chọn sheet khác dùng công cụ upload báo cáo. Không có bản ghi phù hợp hoặc không có bằng chứng số liệu thì không tạo báo cáo bằng 0 giả. Kết quả bảng được hiển thị trong hội thoại và xuất Excel có cấu hình.
-
-Kiểm thử toàn bộ (bao gồm tập câu tiếng Việt): cài `pip install -r requirements-dev.txt` từ gốc, chạy `python -m pytest`. Không thêm pytest vào phụ thuộc chạy Cloud.
-
-
-## Kiểm thử ngôn ngữ tự nhiên diện rộng
-
-> Historical offline implementation/benchmark only. This is not the production chatbot routing path. Current requests require OpenAI; these older scores do not measure OpenAI accuracy.
-
-Bộ kiểm thử cố định có 596 trường hợp (572 câu khác nhau), gồm câu có dấu/không dấu, phép tổng/trung bình/đếm/min/max, nhóm nhiều chiều, xếp hạng, lọc số và thời gian, nguồn mơ hồ và điều kiện chưa hỗ trợ. Kết quả kỳ vọng được viết độc lập và đối chiếu số liệu, không chỉ kiểm tra trạng thái “đã hiểu”.
-
-- Kết quả và giới hạn: `docs/nlp_campaign_results.md`.
-- Lỗi ban đầu và từng câu: `docs/nlp_benchmark_baseline.json`; so sánh cùng bộ mở rộng: `docs/nlp_benchmark_expanded_before.json`, `docs/nlp_benchmark_current.json`.
-- Chạy từ thư mục gốc repository: `python -m pytest -q`.
-- Xuất nhật ký từng câu: `python excel_rule_engine/tests/test_nlp_benchmark.py --audit docs/nlp_benchmark_current.json`. Chế độ audit luôn lưu cả lỗi và trả mã 0; pytest mới là cổng kiểm tra bắt buộc.
-
-Đây là phạm vi đã kiểm thử, không phải cam kết hiểu mọi câu tiếng Việt. Trường hợp phạm vi tính toán mơ hồ sẽ hỏi lại, không tự bỏ điều kiện hoặc chuyển sang gộp file. Khởi động lại cả backend sau khi cập nhật mã nguồn.
 
 ## Tự động tạo báo cáo khi yêu cầu rõ ràng
 

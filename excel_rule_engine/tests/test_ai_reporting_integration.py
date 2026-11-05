@@ -1,4 +1,4 @@
-﻿"""AI service integration: actual exports, no keyword gate, frozen approval."""
+"""AI service integration: actual exports, no keyword gate, frozen approval."""
 import ast
 from contextlib import nullcontext
 from pathlib import Path
@@ -30,8 +30,7 @@ def plan():
 
 def test_auto_uses_ai_without_rule_parser_and_exports(workspace):
     source, output = workspace
-    with patch('app.services.ai.openai_planner.plan_with_openai', return_value=plan()) as ai, \
-         patch('legacy_nlp.report_planner.plan_report', side_effect=AssertionError('no keyword planner')):
+    with patch('app.services.ai.openai_planner.plan_with_openai', return_value=plan()) as ai:
         response = service.automatic_request(source, 'demo', 'cho minh xem cac ban dang lam')
     assert response['status'] == 'ready'
     assert response['result']['planner'] == 'openai'
@@ -62,8 +61,7 @@ def test_changed_data_rejects_approval(workspace):
 
 def test_api_error_never_falls_back(workspace):
     source, output = workspace
-    with patch('app.services.ai.openai_planner.plan_with_openai', side_effect=ValueError('API unavailable')), \
-         patch('legacy_nlp.report_planner.plan_report', side_effect=AssertionError('no fallback')):
+    with patch('app.services.ai.openai_planner.plan_with_openai', side_effect=ValueError('API unavailable')):
         with pytest.raises(ValueError, match='API unavailable'):
             service.automatic_request(source, 'demo', 'show staff')
     assert not list(output.iterdir())
@@ -80,8 +78,7 @@ def test_ai_ui_does_not_require_keyword():
     ns = {'st': SimpleNamespace(session_state=State(), spinner=lambda *a: nullcontext()),
           'call_api': api, 'add_message': Mock(), '_handle_requires_input': Mock()}
     exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), 'exec'), ns)
-    with patch('legacy_nlp.analytical_request.is_analytical_request', side_effect=AssertionError('keyword gate')):
-        ns['process_command']('ai dang kiem nhieu tien nhat vay')
+    ns['process_command']('ai dang kiem nhieu tien nhat vay')
     assert api.call_args.args[0] == '/api/chat'
 
 
@@ -100,7 +97,7 @@ def test_legacy_api_ai_branch_never_calls_keyword_parser(workspace):
     from app import main
     response = {'status': 'ready', 'result': {'source_file': 'staff.csv', 'total_rows': 2}}
     with patch.object(main, 'ensure_session'), patch.object(main, 'create_task', return_value=7), \
-         patch.object(main, 'update_task_status'), patch('legacy_nlp.command_parser.parse_command', side_effect=AssertionError('keyword parser')), \
+         patch.object(main, 'update_task_status'), \
          patch('app.services.chat.chat_conversation.chat', return_value=response['result']):
         outcome = asyncio.run(main.handle_command(main.CommandRequest(text='ai kiem nhieu nhat', project='demo')))
     assert outcome.result['total_rows'] == 2
