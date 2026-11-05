@@ -329,3 +329,7 @@ Names are ASCII/Windows-safe and length-bounded; device names and separators are
 The sidebar now lists conversations (title from first user message, newest activity first), supports creating a new conversation and restoring individual message/agent-session context. Tools, upload and settings are under a collapsed section. Switching conversations cancels pending writes and never restores approval tokens. Clearing a conversation removes its active archive entry. Copies prevent edits in one loaded thread from mutating another.
 
 History is isolated in Streamlit browser-session state, not a permanent account archive. Closing/reconnecting the session or restarting the app can lose it. Agent context expires separately after its existing server TTL. Download the conversation to retain a copy. Durable cross-device history requires authenticated user-owned storage; this implementation does not expose all users' chats from a shared database.
+
+## Shared Excel storage
+
+Optional private Supabase Storage shares sources, generated reports and edit backups between local and deploy. See [setup, migration, and recovery](docs/supabase_storage.md). Local mode remains the default; remote configuration never silently falls back to local files.

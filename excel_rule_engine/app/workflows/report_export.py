@@ -11,6 +11,7 @@ from typing import Any
 
 import pandas as pd
 from openpyxl import Workbook
+from app.services.reports.report_storage import save_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.chart import BarChart, Reference
 from openpyxl.formatting.rule import CellIsRule
@@ -78,7 +79,7 @@ def run_export_report(
     out_name = generate_timestamped_name("Report")
     out_path = safe_output_path(project_name, out_name)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(out_path)
+    save_workbook(wb, out_path)
     logger.info("Report saved: %s", out_path)
 
     return {

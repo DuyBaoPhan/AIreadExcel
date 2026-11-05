@@ -53,7 +53,7 @@ def main():
 
     # 2. Tạo dữ liệu mẫu nếu chưa có
     sample_marker = PROJECT_DIR / "projects" / "demo_project" / "input" / "Employees_IT.xlsx"
-    if not sample_marker.exists():
+    if os.environ.get("FILE_STORAGE_BACKEND", "local").lower() == "local" and not sample_marker.exists():
         print("[*] Dang tao du lieu Excel mau...")
         import scripts.create_sample_data as sample_gen
         sample_gen.OUTPUT_DIR = sample_marker.parent

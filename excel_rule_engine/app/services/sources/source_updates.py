@@ -13,6 +13,8 @@ from zipfile import ZipFile
 
 from openpyxl import load_workbook
 
+from app.services.sources import shared_storage
+
 MAX_BYTES = 40 * 1024 * 1024
 TOKEN_TTL = 300
 _LOCK = threading.RLock()
@@ -130,7 +132,7 @@ def _public(value):
 
 
 def propose_update(input_dir, source_name, key_column, key_value, column, value):
-    """Validate one edit and return a one-use confirmation token; never write files."""
+    """Validate one edit and return a one-use token; never alter source content."""
     with _LOCK:
         now = time.monotonic()
         for token in list(_PENDING):
@@ -139,7 +141,11 @@ def propose_update(input_dir, source_name, key_column, key_value, column, value)
         if len(_PENDING) >= 1000:
             raise ValueError('Too many pending updates; retry after tokens expire.')
         root, path = _source(input_dir, source_name)
-        data = _read(path)
+        shared = shared_storage.is_enabled()
+        # Shared content is an immutable remote snapshot, never the mutable cache.
+        data = shared_storage.read_bytes(path) if shared else _read(path)
+        if len(data) > MAX_BYTES:
+            raise ValueError('Source exceeds the 40 MB limit.')
         prepared = _prepare(data, path.suffix.lower(), key_column, key_value, column, value)
         old = prepared[-1]
         if prepared[1] is not None:
@@ -147,7 +153,7 @@ def propose_update(input_dir, source_name, key_column, key_value, column, value)
         token = secrets.token_urlsafe(32)
         _PENDING[token] = dict(root=str(root), name=source_name, digest=hashlib.sha256(data).digest(),
                                key_column=key_column, key_value=key_value, column=column, value=value,
-                               expires=now + TOKEN_TTL)
+                               expires=now + TOKEN_TTL, shared=shared)
         return {'status': 'confirmation_required', 'token': token, 'preview': {
             'source': source_name, 'key_column': key_column, 'key_value': _public(key_value),
             'column': column, 'old_value': _public(old), 'new_value': _public(value)}}
@@ -167,36 +173,81 @@ def confirm_update(input_dir, token):
         del _PENDING[token]
         if time.monotonic() >= proposal['expires']:
             raise ValueError('Confirmation token expired.')
-        data = _read(path)
-        if hashlib.sha256(data).digest() != proposal['digest']:
-            raise ValueError('Source changed; request a fresh preview.')
-        rows, book, sheet, dialect, ri, ci, old = _prepare(data, path.suffix.lower(), proposal['key_column'], proposal['key_value'], proposal['column'], proposal['value'])
-        temp = root / ('.source-update-' + secrets.token_hex(16) + '.tmp')
-        backup = root / (path.name + '.backup-' + secrets.token_hex(16))
+        shared = shared_storage.is_enabled()
+        if shared != proposal.get('shared', False):
+            raise ValueError('Storage mode changed; request a fresh preview.')
+        if not shared:
+            return _apply_update(root, path, proposal, False, {})
+        # No lease/expiry: an old in-flight writer must never outlive its lock.
+        import uuid
+        owner = str(uuid.uuid4())
+        key = shared_storage.object_key(path)
+        payload = {'p_object_key': key, 'p_owner_token': owner}
+        if shared_storage.rpc('acquire_source_update_lock', payload) is not True:
+            raise ValueError('Source is locked by another update; retry later.')
+        state = {'uncertain': False}
         try:
-            # Exclusive names prevent overwriting either another backup or a temporary file.
-            with backup.open('xb') as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
-            with temp.open('xb') as stream:
-                if book is not None:
-                    sheet.cell(ri + 1, ci + 1).value = proposal['value']
-                    book.save(stream)
-                else:
-                    rows[ri][ci] = proposal['value']
-                    output = io.StringIO(newline='')
-                    csv.writer(output, dialect[0]).writerows(rows)
-                    stream.write(output.getvalue().encode('utf-8-sig' if dialect[1] else 'utf-8'))
-                stream.flush()
-                os.fsync(stream.fileno())
-            _, current = _source(root, path.name)
-            if hashlib.sha256(_read(current)).digest() != proposal['digest']:
-                raise ValueError('Source changed; request a fresh preview.')
-            os.replace(temp, path)
-            return {'status': 'updated', 'source': path.name, 'backup': backup.name}
+            # Fresh remote bytes are read only AFTER acquiring the distributed lock.
+            data = shared_storage.read_bytes(path)
+            return _apply_update(root, path, proposal, True, state, original_data=data)
         finally:
+            if not state['uncertain']:
+                if shared_storage.rpc('release_source_update_lock', payload) is not True:
+                    raise RuntimeError('Shared source lock release was not confirmed; administrator recovery required.')
+
+
+def _apply_update(root, path, proposal, shared, state, original_data=None):
+    """Write under the process lock and, in shared mode, the durable remote lock."""
+    data = original_data if shared else _read(path)
+    if data is None or len(data) > MAX_BYTES:
+        raise ValueError('Source exceeds the 40 MB limit or remote snapshot is missing.')
+    if hashlib.sha256(data).digest() != proposal['digest']:
+        raise ValueError('Source changed; request a fresh preview.')
+    rows, book, sheet, dialect, ri, ci, old = _prepare(data, path.suffix.lower(), proposal['key_column'], proposal['key_value'], proposal['column'], proposal['value'])
+    temp = root / ('.source-update-' + secrets.token_hex(16) + '.tmp')
+    backup_root = root.parent / 'backups' if shared else root
+    if shared:
+        if backup_root.is_symlink() or backup_root.resolve().parent != root.parent:
             if book is not None:
                 book.close()
-            if temp.exists():
-                temp.unlink()
+            raise ValueError('Backup directory must be inside the project.')
+        backup_root.mkdir(parents=True, exist_ok=True)
+    backup = backup_root / (path.name + '.backup-' + secrets.token_hex(16))
+    try:
+        # Exclusive names prevent overwriting either another backup or a temporary file.
+        with backup.open('xb') as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        with temp.open('xb') as stream:
+            if book is not None:
+                sheet.cell(ri + 1, ci + 1).value = proposal['value']
+                book.save(stream)
+            else:
+                rows[ri][ci] = proposal['value']
+                output = io.StringIO(newline='')
+                csv.writer(output, dialect[0]).writerows(rows)
+                stream.write(output.getvalue().encode('utf-8-sig' if dialect[1] else 'utf-8'))
+            stream.flush()
+            os.fsync(stream.fileno())
+        _, current = _source(root, path.name)
+        if not shared and hashlib.sha256(_read(current)).digest() != proposal['digest']:
+            raise ValueError('Source changed; request a fresh preview.')
+        if shared:
+            # A timed-out write may still finish remotely: retain the durable lock.
+            state['uncertain'] = True
+            shared_storage.upload_file(backup, overwrite=False)
+            if shared_storage.read_bytes(backup) != data:
+                raise RuntimeError('Shared backup could not be verified; administrator recovery required.')
+            changed = _read(temp)
+            shared_storage.upload_bytes(path, changed, overwrite=True)
+            if shared_storage.read_bytes(path) != changed:
+                raise RuntimeError('Shared source write could not be verified; administrator recovery required.')
+            state['uncertain'] = False
+        os.replace(temp, path)
+        return {'status': 'updated', 'source': path.name, 'backup': backup.name}
+    finally:
+        if book is not None:
+            book.close()
+        if temp.exists():
+            temp.unlink()

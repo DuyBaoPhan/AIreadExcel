@@ -1,4 +1,4 @@
-"""Advanced reporting UI; uploads and generated results stay in this session only."""
+"""Advanced reporting UI; shared mode persists outputs, while uploads stay private to the session."""
 from __future__ import annotations
 
 import hashlib
@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from app.services.runtime.download_service import EXCEL_MIME
+from app.services.reports.report_storage import persist_wizard_report
 from app.services.reports.report_builder import inspect_sheets, read_uploaded_table
 from app.services.reports.report_engine import join_sources, load_config, run_report, serialize_config
 from app.services.reports.advanced_report_export import build_advanced_report_bytes
@@ -206,7 +207,9 @@ def render_advanced_report_wizard() -> None:
                     report = run_report(df, config)
                     report['warnings'] = source_warnings + report.get('warnings', [])
                     data = build_advanced_report_bytes(report, config, title=title, company=company, prepared_by=prepared_by)
-                result = {"signature": signature, "data": data, "report": report}
+                filename = persist_wizard_report(data, f"Advanced_Report_{signature[:10]}.xlsx",
+                                                 st.session_state.get("project", "demo_project"))
+                result = {"signature": signature, "data": data, "report": report, "filename": filename}
                 st.session_state[_RESULT_KEY] = result
             if result:
                 for warning in result["report"].get("warnings", []):
@@ -214,7 +217,7 @@ def render_advanced_report_wizard() -> None:
                 st.success("Báo cáo đã sẵn sàng. Thay đổi đầu vào sẽ hủy kết quả tải cũ.")
                 st.dataframe(result["report"]["summary"].head(100), use_container_width=True)
                 st.download_button("Tải Excel nâng cao", data=result["data"],
-                                   file_name=f"Advanced_Report_{signature[:10]}.xlsx", mime=EXCEL_MIME,
+                                   file_name=result["filename"], mime=EXCEL_MIME,
                                    key=f"advanced_excel_{signature}")
         except (ValueError, TypeError, KeyError, OSError, UnicodeError) as exc:
             _invalidate()

@@ -177,7 +177,15 @@ async def get_files(
 ):
     """Liệt kê file Excel trong project."""
     target_dir = get_input_dir(project) if folder == "input" else get_output_dir(project)
+    if folder != "input":
+        from app.services.sources import shared_storage
+        if shared_storage.is_enabled():
+            shared_storage.sync_folder(target_dir)
     files = list_excel_files(target_dir)
+    if folder != "input" and shared_storage.is_enabled():
+        # Failed uploads remain on disk for recovery, but are not shared reports.
+        remote_names = set(shared_storage.list_objects(target_dir))
+        files = [path for path in files if path.name in remote_names]
     return {
         "folder": str(target_dir),
         "files": [file_info(f) for f in files],
@@ -194,6 +202,15 @@ async def download_file(project: str, filename: str):
         file_path = _safe_resolve(output_dir, filename)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+    from app.services.sources import shared_storage
+    if shared_storage.is_enabled():
+        try:
+            shared_storage.download_file(file_path)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"File does not exist: {filename}") from None
+        except shared_storage.StorageError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from None
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File không tồn tại: {filename}")

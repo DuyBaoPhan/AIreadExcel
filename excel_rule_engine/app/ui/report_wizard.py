@@ -1,4 +1,4 @@
-"""Session-local upload and report wizard, independent from the chatbot API."""
+"""Upload report wizard; shared mode persists generated outputs, not raw uploads."""
 from __future__ import annotations
 
 import hashlib
@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from app.services.runtime.download_service import EXCEL_MIME
+from app.services.reports.report_storage import persist_wizard_report
 from app.services.reports.report_builder import (
     inspect_sheets, read_uploaded_table, build_report_bytes,
 )
@@ -100,8 +101,9 @@ def render_report_wizard() -> None:
             try:
                 with st.spinner("Đang tạo báo cáo..."):
                     data = build_report_bytes(df, **config)
-                result = {"signature": signature, "data": data,
-                          "filename": f"Report_{template}_{signature[:10]}.xlsx"}
+                filename = persist_wizard_report(data, f"Report_{template}_{signature[:10]}.xlsx",
+                                                 st.session_state.get("project", "demo_project"))
+                result = {"signature": signature, "data": data, "filename": filename}
                 st.session_state.uploaded_report_result = result
             except (ValueError, OSError) as exc:
                 st.error(str(exc))

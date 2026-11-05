@@ -99,11 +99,17 @@ def _configuration(embedder):
 
 
 def _snapshot(input_dir, embedder):
-    root = Path(input_dir).resolve(strict=True)
-    if not root.is_dir():
+    from app.services.sources import shared_storage
+    shared = shared_storage.is_enabled()
+    root = Path(input_dir).resolve(strict=not shared)
+    if not shared and not root.is_dir():
         raise RetrievalError("Input must be a directory.")
-    files = sorted((p for p in root.iterdir() if not p.name.startswith("~$")
-                    and p.suffix.lower() in {".xlsx", ".csv", ".xls"}), key=lambda p: p.name)
+    if shared:
+        files = [root / name for name in sorted(shared_storage.list_objects(root))
+                 if not name.startswith("~$") and Path(name).suffix.lower() in {".xlsx", ".csv", ".xls"}]
+    else:
+        files = sorted((p for p in root.iterdir() if not p.name.startswith("~$")
+                        and p.suffix.lower() in {".xlsx", ".csv", ".xls"}), key=lambda p: p.name)
     if len(files) > MAX_FILES:
         raise RetrievalError(f"Input exceeds {MAX_FILES} files; no partial index was created.")
     contents = []
@@ -112,14 +118,20 @@ def _snapshot(input_dir, embedder):
     for path in files:
         if path.suffix.lower() == ".xls":
             raise RetrievalError("Legacy .xls is not indexed; convert it to .xlsx before retrieval.")
-        if path.is_symlink() or not path.is_file() or path.resolve().parent != root:
-            raise RetrievalError(f"Input file must be a regular file inside input: {path.name}")
-        total += path.stat().st_size
-        if total > MAX_TOTAL_BYTES:
-            raise RetrievalError("Input exceeds the 40 MB total byte limit.")
-        # Read at most the remaining allowance even if a source changes during reading.
-        with path.open("rb") as stream:
-            data = stream.read(MAX_TOTAL_BYTES - sum(len(b) for _, b in contents) + 1)
+        if shared:
+            if path.parent != root or path.name in {".", ".."}:
+                raise RetrievalError("Invalid shared input filename.")
+            # Immutable provider response, independent of concurrent local cache refreshes.
+            data = shared_storage.read_bytes(path)
+        else:
+            if path.is_symlink() or not path.is_file() or path.resolve().parent != root:
+                raise RetrievalError(f"Input file must be a regular file inside input: {path.name}")
+            total += path.stat().st_size
+            if total > MAX_TOTAL_BYTES:
+                raise RetrievalError("Input exceeds the 40 MB total byte limit.")
+            # Read at most the remaining allowance even if a source changes during reading.
+            with path.open("rb") as stream:
+                data = stream.read(MAX_TOTAL_BYTES - sum(len(b) for _, b in contents) + 1)
         if sum(len(b) for _, b in contents) + len(data) > MAX_TOTAL_BYTES:
             raise RetrievalError("Input exceeds the 40 MB total byte limit.")
         digest.update(path.name.encode("utf-8"))

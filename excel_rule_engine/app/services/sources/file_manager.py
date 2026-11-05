@@ -27,13 +27,23 @@ def set_projects_root(root: str | Path) -> None:
     logger.info("Projects root: %s", _PROJECTS_ROOT)
 
 
-def get_projects_root() -> Path:
+def get_local_projects_root() -> Path:
+    """Original local files, kept separate from the disposable shared cache."""
     if _PROJECTS_ROOT is None:
         # Default: thư mục 'projects' nằm cùng cấp với app/
-        default = PROJECTS_DIR
-        default.mkdir(parents=True, exist_ok=True)
-        return default
+        return PROJECTS_DIR
     return _PROJECTS_ROOT
+
+
+def get_projects_root() -> Path:
+    from app.services.sources.shared_storage import is_enabled
+    root = get_local_projects_root()
+    if is_enabled():
+        root = root / ".shared-cache"
+    if any(node.is_symlink() for node in (root, *root.parents)):
+        raise ValueError("Symlink project paths are not supported.")
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 def _safe_resolve(base: Path, *parts: str) -> Path:
@@ -41,8 +51,14 @@ def _safe_resolve(base: Path, *parts: str) -> Path:
     Tạo đường dẫn an toàn, đảm bảo kết quả nằm trong base.
     Raise ValueError nếu path traversal được phát hiện.
     """
-    candidate = (base / Path(*parts)).resolve()
-    if not str(candidate).startswith(str(base)):
+    unresolved = base / Path(*parts)
+    for node in (unresolved, *unresolved.parents):
+        if node.is_symlink():
+            raise ValueError("Symlink project paths are not supported.")
+        if node == base:
+            break
+    candidate = unresolved.resolve()
+    if not candidate.is_relative_to(base.resolve()):
         raise ValueError(
             f"Path traversal bị phát hiện: '{candidate}' nằm ngoài '{base}'."
         )
@@ -50,20 +66,24 @@ def _safe_resolve(base: Path, *parts: str) -> Path:
 
 
 def get_project_dir(project_name: str = "demo_project") -> Path:
+    if not project_name or project_name in {".", ".."} or any(c in project_name for c in "/\\:\x00"):
+        raise ValueError("Invalid project name.")
     root = get_projects_root()
     return _safe_resolve(root, project_name)
 
 
 def get_input_dir(project_name: str = "demo_project") -> Path:
     project = get_project_dir(project_name)
-    d = project / "input"
+    d = _safe_resolve(project, "input")
+    from app.services.sources.shared_storage import sync_folder
+    sync_folder(d)
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def get_output_dir(project_name: str = "demo_project") -> Path:
     project = get_project_dir(project_name)
-    d = project / "output"
+    d = _safe_resolve(project, "output")
     d.mkdir(parents=True, exist_ok=True)
     return d
 

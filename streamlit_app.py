@@ -51,7 +51,9 @@ def start_fastapi():
 
 # Only documented application secrets are inherited by the backend child.
 import streamlit as st
-for name in ("OPENAI_API_KEY", "OPENAI_MODEL", "REPORT_PLANNER", "RAG_MODEL_PATH"):
+for name in ("OPENAI_API_KEY", "OPENAI_MODEL", "REPORT_PLANNER", "RAG_MODEL_PATH",
+             "FILE_STORAGE_BACKEND", "SUPABASE_URL", "SUPABASE_SECRET_KEY",
+             "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_STORAGE_BUCKET"):
     try:
         value = st.secrets.get(name)
     except (FileNotFoundError, KeyError):

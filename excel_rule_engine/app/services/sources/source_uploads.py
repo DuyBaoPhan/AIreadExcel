@@ -3,14 +3,23 @@ from io import BytesIO
 from pathlib import Path
 import csv
 import zipfile
+import os
+import tempfile
 from openpyxl import load_workbook
 
 
 def save_source(input_dir,name,raw):
-    root=Path(input_dir).resolve()
+    from app.services.sources import shared_storage
+    original_root=Path(input_dir).absolute()
+    if original_root.is_symlink():
+        raise ValueError('Symlink source folders are not supported.')
+    root=original_root.resolve()
+    shared_storage.sync_folder(root)
     if not isinstance(name,str) or not name or any(c in name for c in '/\\:') or name.startswith(('~$','.')):
         raise ValueError('Ten tep nguon khong hop le.')
     path=root/name
+    if path.exists() or path.is_symlink():
+        raise ValueError('Ten tep da ton tai; khong ghi de nguon. Hay doi ten tep.')
     if path.suffix.lower() not in {'.xlsx','.csv'}:
         raise ValueError('Chi ho tro XLSX/CSV cho nguon chatbot.')
     if not isinstance(raw,bytes) or not raw or len(raw)>40*1024*1024:
@@ -29,10 +38,22 @@ def save_source(input_dir,name,raw):
             next(csv.reader(raw.decode('utf-8-sig').splitlines()))
     except Exception:
         raise ValueError('Tep Excel/CSV khong hop le.') from None
+    staged = None
     try:
-        with path.open('xb') as stream: stream.write(raw)
+        descriptor, temp_name = tempfile.mkstemp(prefix='.source-upload-', dir=root)
+        staged = Path(temp_name)
+        with os.fdopen(descriptor, 'wb') as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        # Remote creation is authoritative and never overwrites a pre-existing source.
+        shared_storage.upload_bytes(path, raw, overwrite=False)
+        os.link(staged, path)  # Atomic create-only publication of validated bytes.
     except FileExistsError:
         raise ValueError('Ten tep da ton tai; khong ghi de nguon. Hay doi ten tep.') from None
     except OSError:
         raise ValueError('Khong the luu tep nguon.') from None
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
     return {'source':name,'bytes':len(raw)}

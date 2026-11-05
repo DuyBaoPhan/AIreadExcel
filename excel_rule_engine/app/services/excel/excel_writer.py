@@ -12,6 +12,7 @@ from typing import Any
 
 import pandas as pd
 from openpyxl import Workbook
+from app.services.reports.report_storage import save_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils.dataframe import dataframe_to_rows
 
@@ -74,7 +75,7 @@ def write_excel(
             )
             ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 50)
 
-    wb.save(path)
+    save_workbook(wb, path)
     logger.info("Đã ghi file: %s (%d dòng)", path, len(df))
     return path
 
@@ -128,7 +129,7 @@ def write_comparison_excel(
         cell.font = HEADER_FONT
         cell.fill = HEADER_FILL
 
-    wb.save(path)
+    save_workbook(wb, path)
     logger.info("Đã ghi Change Log: %s", path)
     return path
 

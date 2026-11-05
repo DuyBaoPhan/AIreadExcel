@@ -6,6 +6,7 @@ import hmac
 import json
 from pathlib import Path
 from app.services.reports.report_naming import report_filename
+from app.services.reports.report_storage import upload_report
 
 
 from app.services.reports.advanced_report_export import build_advanced_report_bytes
@@ -21,7 +22,14 @@ MAX_SOURCE_BYTES = 40 * 1024 * 1024
 def _load_sources(input_dir: Path, source_name: str | None):
     """Read bounded snapshots; only exact, listed basenames are selectable."""
     root = Path(input_dir).resolve()
-    files = list_excel_files(root)
+    from app.services.sources import shared_storage
+    from app.services.sources.file_manager import SUPPORTED_EXTENSIONS
+    shared = shared_storage.is_enabled()
+    if shared:
+        files = [root / name for name in sorted(shared_storage.list_objects(root))
+                 if Path(name).suffix.lower() in SUPPORTED_EXTENSIONS and not name.startswith('~$')]
+    else:
+        files = list_excel_files(root)
     names = [path.name for path in files]
     if source_name is not None and source_name not in names:
         raise ValueError('Tep nguon khong nam trong danh sach tep da tai len.')
@@ -29,12 +37,13 @@ def _load_sources(input_dir: Path, source_name: str | None):
         raise ValueError('Toi da 20 tep nguon; hay giam so tep truoc khi lap bao cao.')
     if any(not p.resolve().is_relative_to(root) for p in files):
         raise ValueError('Tep nguon nam ngoai thu muc input.')
-    try:
-        total_size = sum(p.stat().st_size for p in files)
-    except OSError as exc:
-        raise ValueError('Tep nguon da thay doi hoac khong the truy cap; vui long thu lai.') from exc
-    if total_size > MAX_SOURCE_BYTES:
-        raise ValueError('Tong dung luong tep nguon vuot gioi han 40 MB.')
+    if not shared:
+        try:
+            total_size = sum(p.stat().st_size for p in files)
+        except OSError as exc:
+            raise ValueError('Tep nguon da thay doi hoac khong the truy cap; vui long thu lai.') from exc
+        if total_size > MAX_SOURCE_BYTES:
+            raise ValueError('Tong dung luong tep nguon vuot gioi han 40 MB.')
     sources, snapshots, warnings = {}, {}, []
     total_bytes = 0
     for path in files:
@@ -42,14 +51,22 @@ def _load_sources(input_dir: Path, source_name: str | None):
             continue
         try:
             # A bounded read also protects against a file growing after stat().
-            with path.open('rb') as stream:
-                raw = stream.read(MAX_SOURCE_BYTES - total_bytes + 1)
+            if shared:
+                # Own immutable response bytes; concurrent cache sync cannot alter approval evidence.
+                raw = shared_storage.read_bytes(path)
+            else:
+                with path.open('rb') as stream:
+                    raw = stream.read(MAX_SOURCE_BYTES - total_bytes + 1)
             total_bytes += len(raw)
             if total_bytes > MAX_SOURCE_BYTES:
                 raise ValueError('Tong dung luong tep nguon vuot gioi han 40 MB.')
             sources[path.name] = read_uploaded_table(path.name, raw, sheet_name=0)
             snapshots[path.name] = raw
+        except shared_storage.StorageError:
+            raise
         except (ValueError, OSError) as exc:
+            if shared and isinstance(exc, OSError):
+                raise ValueError('Tep nguon da thay doi hoac khong the truy cap; vui long thu lai.') from exc
             if total_bytes > MAX_SOURCE_BYTES:
                 raise ValueError('Tong dung luong tep nguon vuot gioi han 40 MB.') from exc
             warnings.append(f'Khong doc duoc {path.name}: {exc}')
@@ -211,6 +228,12 @@ def _render_report(plan: dict, sources: dict, project_name: str,
                 continue
             with stream:
                 stream.write(blob)
+            try:
+                upload_report(candidate)
+            except FileExistsError:
+                # Another app instance already claimed this remote report name.
+                # Retain this local snapshot; do not delete or overwrite reports.
+                continue
             output = candidate
             break
         else:

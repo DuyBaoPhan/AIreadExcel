@@ -21,9 +21,9 @@ class TestAggregationWorkflow(unittest.TestCase):
     def setUp(self):
         """Tạo temp directory với file Excel mẫu."""
         self.tmpdir = tempfile.mkdtemp()
-        self.input_dir = Path(self.tmpdir) / "input"
-        self.input_dir.mkdir()
-        self.output_dir = Path(self.tmpdir) / "output"
+        self.input_dir = Path(self.tmpdir) / "test_project" / "input"
+        self.input_dir.mkdir(parents=True)
+        self.output_dir = Path(self.tmpdir) / "test_project" / "output"
         self.output_dir.mkdir()
 
         # Tạo 2 file Excel mẫu
@@ -48,7 +48,7 @@ class TestAggregationWorkflow(unittest.TestCase):
         from app.workflows.aggregation import run_aggregation
         result = run_aggregation(
             input_dir=self.input_dir,
-            project_name=".",
+            project_name="test_project",
         )
         self.assertEqual(result["files_merged"], 2)
         self.assertEqual(result["total_rows"], 4)
@@ -59,16 +59,16 @@ class TestAggregationWorkflow(unittest.TestCase):
         empty_dir = Path(self.tmpdir) / "empty"
         empty_dir.mkdir()
         with self.assertRaises(FileNotFoundError):
-            run_aggregation(input_dir=empty_dir, project_name=".")
+            run_aggregation(input_dir=empty_dir, project_name="test_project")
 
 
 class TestFilterWorkflow(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
-        self.input_dir = Path(self.tmpdir) / "input"
-        self.input_dir.mkdir()
-        self.output_dir = Path(self.tmpdir) / "output"
+        self.input_dir = Path(self.tmpdir) / "test_project" / "input"
+        self.input_dir.mkdir(parents=True)
+        self.output_dir = Path(self.tmpdir) / "test_project" / "output"
         self.output_dir.mkdir()
 
         df = pd.DataFrame({
@@ -87,7 +87,7 @@ class TestFilterWorkflow(unittest.TestCase):
         from app.workflows.filtering import run_filter
         result = run_filter(
             input_dir=self.input_dir,
-            project_name=".",
+            project_name="test_project",
             column="salary",
             operator=">",
             value=10_000_000,
@@ -98,7 +98,7 @@ class TestFilterWorkflow(unittest.TestCase):
         from app.workflows.filtering import run_filter
         result = run_filter(
             input_dir=self.input_dir,
-            project_name=".",
+            project_name="test_project",
             column="salary",
             operator="<",
             value=10_000_000,
@@ -109,7 +109,7 @@ class TestFilterWorkflow(unittest.TestCase):
         from app.workflows.filtering import run_filter
         result = run_filter(
             input_dir=self.input_dir,
-            project_name=".",
+            project_name="test_project",
             column="department",
             operator="==",
             value="IT",
@@ -121,7 +121,7 @@ class TestFilterWorkflow(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_filter(
                 input_dir=self.input_dir,
-                project_name=".",
+                project_name="test_project",
                 column="nonexistent_col",
                 operator=">",
                 value=100,
@@ -132,9 +132,9 @@ class TestComparisonWorkflow(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
-        self.input_dir = Path(self.tmpdir) / "input"
-        self.input_dir.mkdir()
-        self.output_dir = Path(self.tmpdir) / "output"
+        self.input_dir = Path(self.tmpdir) / "test_project" / "input"
+        self.input_dir.mkdir(parents=True)
+        self.output_dir = Path(self.tmpdir) / "test_project" / "output"
         self.output_dir.mkdir()
 
         # Root file
@@ -162,7 +162,7 @@ class TestComparisonWorkflow(unittest.TestCase):
         from app.workflows.comparison import run_comparison
         result = run_comparison(
             input_dir=self.input_dir,
-            project_name=".",
+            project_name="test_project",
             primary_key="employee_id",
         )
         self.assertEqual(result["added"], 1)  # E5
@@ -171,7 +171,7 @@ class TestComparisonWorkflow(unittest.TestCase):
         from app.workflows.comparison import run_comparison
         result = run_comparison(
             input_dir=self.input_dir,
-            project_name=".",
+            project_name="test_project",
             primary_key="employee_id",
         )
         self.assertEqual(result["updated"], 1)  # E1 salary changed
@@ -180,7 +180,7 @@ class TestComparisonWorkflow(unittest.TestCase):
         from app.workflows.comparison import run_comparison
         result = run_comparison(
             input_dir=self.input_dir,
-            project_name=".",
+            project_name="test_project",
             primary_key="employee_id",
         )
         self.assertEqual(result["unchanged"], 1)  # E2
@@ -190,7 +190,7 @@ class TestComparisonWorkflow(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_comparison(
                 input_dir=self.input_dir,
-                project_name=".",
+                project_name="test_project",
                 primary_key="nonexistent_key",
             )
 
@@ -198,7 +198,7 @@ class TestComparisonWorkflow(unittest.TestCase):
         from app.workflows.comparison import run_comparison
         result = run_comparison(
             input_dir=self.input_dir,
-            project_name=".",
+            project_name="test_project",
             primary_key="employee_id",
         )
         self.assertTrue(Path(result["output_path"]).exists())
